@@ -1,0 +1,7 @@
+#!/usr/bin/env elymas
+
+s32 a;
+
+a = 10;
+
+putchar (a);

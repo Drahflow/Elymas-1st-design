@@ -1,0 +1,12 @@
+putchar 72;
+putchar 65;
+putchar 76;
+putchar 76;
+putchar 79;
+putchar 32;
+putchar 87;
+putchar 69;
+putchar 76;
+putchar 84;
+putchar 33;
+putchar 10;
