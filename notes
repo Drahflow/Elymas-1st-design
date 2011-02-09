@@ -51,9 +51,11 @@ Real tuples are held on the heap (TODO: maybe fix that one day)
 An array is held on the heap, the length field of the memory manager is used
 
 A closure is a function which is truly on the heap and looks like
-  lea (%rip), %r8
-  jmp (%rip)
+  call 2(%rip)
+  <2 byte padding>
   <real body's address here>
   [Data...]
+and the function body grabs the data area via
+  pop %r8
 i.e. r8 is always pointing to the closure data, which is copied when a closure
 is created.
