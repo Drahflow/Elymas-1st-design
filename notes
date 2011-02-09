@@ -1,0 +1,59 @@
+* There will be Lists [0, 1, 2]
+* There will be tuples (0, 1, 2)
+* tuples auto-flatten
+  * 1 == (1) == ((1))
+  * (2, 3) == ((2, 3)) == ((2), 3) == ((2), (3))
+* f a will be the function application f to the argument a (or the tuple "(a, b, c)")
+  Example: Let f(int x, int y) := x + y
+  f (1, 2) -> 3
+  f [(1, 2), (3, 4)] -> [3, 7]
+  f ([1, 2], [3, 4]) -> [4, 6]
+  f (1, 2, 3) -> error
+  f [1, 2] -> error
+  Example: Let f(int x) := x + 1
+  f 1 -> 2
+  f (1) -> 2
+  f [(1)] -> [2]
+  f ([1]) -> [2]
+  f ([(1)]) -> [2]
+  f ([([1])]) -> [[2]]
+  f ([([(1)])]) -> [[2]]
+  f [1, 2] -> [2, 3]
+  f (1, 2) -> error
+  Example: Let f(~[]`-1 x) := length x
+  f 1 -> error
+  f ([1, 2]) -> 2
+  f [1, 2] -> 2
+  f [(1)] -> 1
+  f [[1, 2], [3, 4]] -> 2
+  f`1 [[1, 2], [3, 4]] -> [2, 2]
+  Example: Let f(~[] x) := length x
+  f 1 -> error
+  f ([1, 2]) -> 2
+  f [1, 2] -> 2
+  f [(1)] -> 1
+  f [[1, 2], [3, 4]] -> [2, 2]
+  f`-1 [[1, 2], [3, 4]] -> [2, 2]
+    * because the inner invocation of f will again match from bottom
+  Example:
+  [1, 2, 3] + [1, 2, 3] -> [2, 4, 6]
+* a scalar is a 1-element-tuple
+* Interface implementation goes like this
+  * If specific method given in "implements" block -> use that one
+  * If correctly named method given in rest of class -> use that one
+  * use method given by "others:"
+
+== Memory Layout + Low Level Representation ==
+Expression values are in %rax
+Heap Objects start with a length field at [-8], object data at [0]
+A one-tuple is represented the same as the scalar value
+Real tuples are held on the heap (TODO: maybe fix that one day)
+An array is held on the heap, the length field of the memory manager is used
+
+A closure is a function which is truly on the heap and looks like
+  lea (%rip), %r8
+  jmp (%rip)
+  <real body's address here>
+  [Data...]
+i.e. r8 is always pointing to the closure data, which is copied when a closure
+is created.
