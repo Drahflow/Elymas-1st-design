@@ -6,6 +6,7 @@
 #include <vector>
 #include <cassert>
 #include <string>
+#include <stdexcept>
 
 class Assembly;
 
@@ -34,6 +35,7 @@ class Type: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
     void resolveSymbols(SymbolTable *) { assert(false); }
     void rewriteFunctionApplications(NodeExpr **) { assert(false); }
+    void assignUnresolvedTypes() { assert(false); }
     void compile(Assembly &) = 0;
     void compileL(Assembly &) { assert(false); }
     Type *getType() { assert(false); } // TODO: add type "Type" one day
@@ -131,6 +133,27 @@ class NodeExprFunction;
 class TypeFunctionSet: public Type {
   public:
     virtual NodeExprFunction *get(Type *argumentType) = 0;
+    virtual bool canConvertTo(Type *);
+    virtual void convertTo(Type *, Assembly &);
+};
+
+class NodeFunctionSet;
+
+class TypeNodeBackedFunctionSet: public TypeFunctionSet {
+  public:
+    TypeNodeBackedFunctionSet(NodeFunctionSet *node): node(node) { }
+
+    void compile(Assembly &) {
+      throw std::runtime_error("NodeExprUntypedLambda cannot yet be saved unresolved");
+    }
+
+    // there will be pointers one day
+    unsigned int getSize() { return 8; }
+
+    NodeExprFunction *get(Type *t);
+
+  private:
+    NodeFunctionSet *node;
 };
 
 #endif

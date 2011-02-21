@@ -24,6 +24,10 @@ void NodeStatementExpr::rewriteFunctionApplications() {
   expr->rewriteFunctionApplications(&expr);
 }
 
+void NodeStatementExpr::assignUnresolvedTypes() {
+  expr->assignUnresolvedTypes();
+}
+
 void NodeStatementExpr::compile(Assembly &assembly) {
   expr->compile(assembly);
 }
@@ -47,6 +51,11 @@ void NodeStatementWhile::rewriteFunctionApplications() {
   body->rewriteFunctionApplications();
 }
 
+void NodeStatementWhile::assignUnresolvedTypes() {
+  condition->assignUnresolvedTypes();
+  body->assignUnresolvedTypes();
+}
+
 void NodeStatementWhile::compile(Assembly &assembly) {
   assert(false);
 }
@@ -59,6 +68,10 @@ void NodeStatementGoto::rewriteFunctionApplications() {
   target->rewriteFunctionApplications(&target);
 }
 
+void NodeStatementGoto::assignUnresolvedTypes() {
+  target->assignUnresolvedTypes();
+}
+
 void NodeStatementGoto::compile(Assembly &assembly) {
   assert(false);
 }
@@ -69,6 +82,10 @@ void NodeStatementLabel::resolveSymbols(SymbolTable *st) {
 
 void NodeStatementLabel::rewriteFunctionApplications() {
   // no rewriting the identifier so far
+}
+
+void NodeStatementLabel::assignUnresolvedTypes() {
+  name->assignUnresolvedTypes();
 }
 
 void NodeStatementLabel::compile(Assembly &assembly) {
@@ -87,6 +104,12 @@ void NodeStatementRule::resolveSymbols(SymbolTable *st) {
 
 void NodeStatementRule::rewriteFunctionApplications() {
   mapping->rewriteFunctionApplications();
+}
+
+void NodeStatementRule::assignUnresolvedTypes() {
+  lhs->assignUnresolvedTypes();
+  rhs->assignUnresolvedTypes();
+  mapping->assignUnresolvedTypes();
 }
 
 void NodeStatementRule::compile(Assembly &assembly) {
@@ -113,6 +136,12 @@ void NodeStatementBlock::rewriteFunctionApplications() {
   }
 }
 
+void NodeStatementBlock::assignUnresolvedTypes() {
+  for(auto i = statements.begin(); i != statements.end(); ++i) {
+    (*i)->assignUnresolvedTypes();
+  }
+}
+
 void NodeStatementBlock::compile(Assembly &assembly) {
   for(auto i = statements.begin(); i != statements.end(); ++i) {
     (*i)->compile(assembly);
@@ -127,11 +156,18 @@ void NodeExprBinary::rewriteDeclarations(SymbolTable *st, NodeExpr **) {
 void NodeExprBinary::resolveSymbols(SymbolTable *st) {
   lhs->resolveSymbols(st);
   rhs->resolveSymbols(st);
+
+  syms = st;
 }
 
 void NodeExprBinary::rewriteFunctionApplications(NodeExpr **) {
   lhs->rewriteFunctionApplications(&lhs);
   rhs->rewriteFunctionApplications(&rhs);
+}
+
+void NodeExprBinary::assignUnresolvedTypes() {
+  lhs->assignUnresolvedTypes();
+  rhs->assignUnresolvedTypes();
 }
 
 void NodeExprBinary::compile(Assembly &assembly) {
@@ -142,6 +178,10 @@ void NodeExprBinary::compileL(Assembly &assembly) {
   assert(false);
 }
 
+NodeExprFunction *NodeExprBinary::assignType(Type *type) {
+  assert(false);
+}
+
 Type *NodeExprBinary::getType() {
   Type *lt = lhs->getType();
   Type *rt = rhs->getType();
@@ -149,6 +189,14 @@ Type *NodeExprBinary::getType() {
     return lt;
   } else if(lt->canConvertTo(rt)) {
     return rt;
+  } else if(auto *ltf = dynamic_cast<TypeFunction *>(lt)) {
+    assert(false);
+  } else if(auto *rtf = dynamic_cast<TypeFunction *>(rt)) {
+    assert(false);
+  } else if(auto *ltf = dynamic_cast<TypeFunctionSet *>(lt)) {
+    return new TypeNodeBackedFunctionSet(this);
+  } else if(auto *rtf = dynamic_cast<TypeFunctionSet *>(rt)) {
+    return new TypeNodeBackedFunctionSet(this);
   } else {
     // TODO: do real lowest common supertype detection here
     assert(false);
@@ -171,6 +219,10 @@ void NodeExprUnary::resolveSymbols(SymbolTable *st) {
 
 void NodeExprUnary::rewriteFunctionApplications(NodeExpr **) {
   arg->rewriteFunctionApplications(&arg);
+}
+
+void NodeExprUnary::assignUnresolvedTypes() {
+  arg->assignUnresolvedTypes();
 }
 
 void NodeExprUnary::compile(Assembly &assembly) {
@@ -305,6 +357,17 @@ NodeExprTuple::NodeExprTuple(NodeExprList *list): type(0) {
   }
 }
 
+NodeExprTuple::NodeExprTuple(NodeExpr *expr1): type(0) {
+  assert(expr1);
+
+  if(NodeExprTuple *tuple = dynamic_cast<NodeExprTuple *>(expr1)) {
+    std::copy(tuple->elements.begin(), tuple->elements.end(),
+        back_inserter(elements));
+  } else {
+    elements.push_back(expr1);
+  }
+}
+
 NodeExprTuple::NodeExprTuple(NodeExpr *expr1, NodeExpr *expr2): type(0) {
   assert(expr1);
   assert(expr2);
@@ -360,6 +423,12 @@ void NodeExprTuple::rewriteFunctionApplications(NodeExpr **parent) {
     for(auto i = elements.begin(); i != elements.end(); ++i) {
       (*i)->rewriteFunctionApplications(&*i);
     }
+  }
+}
+
+void NodeExprTuple::assignUnresolvedTypes() {
+  for(auto i = elements.begin(); i != elements.end(); ++i) {
+    (*i)->assignUnresolvedTypes();
   }
 }
 
@@ -572,6 +641,12 @@ void NodeExprArray::rewriteFunctionApplications(NodeExpr **) {
   }
 }
 
+void NodeExprArray::assignUnresolvedTypes() {
+  for(auto i = elements.begin(); i != elements.end(); ++i) {
+    (*i)->assignUnresolvedTypes();
+  }
+}
+
 void NodeExprArray::compile(Assembly &assembly) {
   uint64_t size = 0;
   uint64_t elemSize = 0;
@@ -648,6 +723,8 @@ void NodeExprApply::rewriteDeclarations(SymbolTable *st, NodeExpr **parent) {
 void NodeExprApply::resolveSymbols(SymbolTable *st) {
   function->resolveSymbols(st);
   argument->resolveSymbols(st);
+
+  syms = st;
 }
 
 class RCX: public NodeExpr {
@@ -656,6 +733,7 @@ class RCX: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **) { assert(false); }
     void resolveSymbols(SymbolTable *) { }
     void rewriteFunctionApplications(NodeExpr **) { }
+    void assignUnresolvedTypes() { }
     void compile(Assembly &assembly) {
       assembly.add(move(rcx(), rax()));
     }
@@ -663,9 +741,18 @@ class RCX: public NodeExpr {
       assert(false);
     }
     Type *getType() { return type; }
+
   private:
     Type *type;
 };
+
+static std::string createUniqueIdentifier() {
+  static unsigned long long id = 0;
+
+  std::ostringstream str;
+  str << "#" << id++;
+  return str.str();
+}
 
 // 1. for each function of the overload set
 // 2. from top to bottom search for tuples of right count
@@ -734,6 +821,45 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
 
     int rank = ft->getArgumentRank(i);
     assert(rank);
+
+    if(auto argft = dynamic_cast<TypeFunction *>(argt) && !dynamic_cast<TypeFunction *>(fargt)) {
+      // apply function first
+      assert(false);
+    } else if(auto argfst = dynamic_cast<TypeFunctionSet *>(argt) && !dynamic_cast<TypeFunctionSet *>(fargt)) {
+      if(auto fargft = dynamic_cast<TypeFunction *>(fargt)) {
+        // resolve function set and use resulting function
+        assert(false);
+      } else {
+        // create new function set
+        std::string unique = createUniqueIdentifier();
+
+        NodeExprList *argumentList = new NodeExprList();
+        if(auto argtuple = dynamic_cast<NodeExprTuple *>(argument)) {
+          for(int j = 0; j < ft->getArgumentCount(); ++j) {
+            if(j != i) {
+              argumentList->add(argtuple->getElements().at(j));
+            } else {
+              argumentList->add(new NodeExprApply(argtuple->getElements().at(j), new NodeIdentifier(unique)));
+            }
+          }
+        } else {
+          assert(i == 0);
+
+          argumentList->add(argument);
+        }
+
+        *parent = new NodeExprUntypedLambda(
+            unique,
+            new NodeStatementExpr(
+              new NodeExprApply(function,
+                new NodeExprTuple(argumentList))),
+            syms);
+
+        (*parent)->rewriteFunctionApplications(parent);
+        // TODO: correctly handle co-looping
+        return;
+      }
+    }
 
     if(rank > 0) {
       int depth = 0;
@@ -811,6 +937,10 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
       }
     }
   }
+}
+
+void NodeExprApply::assignUnresolvedTypes() {
+  // TODO: resolve TypeFunctionSets here
 }
 
 void NodeExprApply::compile(Assembly &assembly) {
@@ -913,6 +1043,10 @@ void NodeExprProjection::rewriteFunctionApplications(NodeExpr **) {
   // nothing to do
 }
 
+void NodeExprProjection::assignUnresolvedTypes() {
+  // nothing to do
+}
+
 void NodeExprProjection::compile(Assembly &assembly) {
   assert(false);
 }
@@ -934,7 +1068,6 @@ Type *NodeExprProjection::getType() {
       _(int pos, int level): pos(pos), level(level) { }
 
       unsigned int getSize() { return 8; }
-      bool canConvertTo(Type *) { assert(false); }
       NodeExprFunction *get(Type *argumentType) {
         if(level) {
           // TODO: think about this
@@ -945,7 +1078,7 @@ Type *NodeExprProjection::getType() {
           }
 
           if(argumentType->getTupleWidth() == 1) {
-            if(pos) compileError("insufficient tuple width");
+            if(pos) return 0;
 
             TypeFunction *type =
               (new TypeFunction())
@@ -959,6 +1092,7 @@ Type *NodeExprProjection::getType() {
                 void rewriteDeclarations(SymbolTable *, NodeExpr **) { assert(false); }
                 void resolveSymbols(SymbolTable *) { assert(false); }
                 void rewriteFunctionApplications(NodeExpr **) { assert(false); }
+                void assignUnresolvedTypes() { assert(false); }
                 void compile(Assembly &assembly) {
                   assembly.add(move(
                       reinterpret_cast<uint64_t>(&projection0_0), rax()));
@@ -974,7 +1108,7 @@ Type *NodeExprProjection::getType() {
             TypeTuple *tt = dynamic_cast<TypeTuple *>(argumentType);
             assert(tt);
 
-            if(pos >= tt->getTupleWidth()) compileError("insufficient tuple width");
+            if(pos >= tt->getTupleWidth()) return 0;
 
             TypeFunction *type = (new TypeFunction())
               ->setReturnType(tt->getElementType(pos));
@@ -989,6 +1123,7 @@ Type *NodeExprProjection::getType() {
                 void rewriteDeclarations(SymbolTable *, NodeExpr **) { assert(false); }
                 void resolveSymbols(SymbolTable *) { assert(false); }
                 void rewriteFunctionApplications(NodeExpr **) { assert(false); }
+                void assignUnresolvedTypes() { assert(false); }
                 void compile(Assembly &assembly) {
                   switch(pos) {
                     case 0: assembly.add(move(
@@ -1040,6 +1175,11 @@ void NodeExprLoop::resolveSymbols(SymbolTable *) {
 void NodeExprLoop::rewriteFunctionApplications(NodeExpr **parent) {
   container->rewriteFunctionApplications(&container);
   expr->rewriteFunctionApplications(&expr);
+}
+
+void NodeExprLoop::assignUnresolvedTypes() {
+  container->assignUnresolvedTypes();
+  expr->assignUnresolvedTypes();
 }
 
 void NodeExprLoop::compile(Assembly &assembly) {
@@ -1170,8 +1310,9 @@ void NodeExprAdd::rewriteFunctionApplications(NodeExpr **parent) {
             ->addArgument(Type::sint32, 1)
             ->addArgument(Type::sint32, 1)) { }
           void rewriteDeclarations(SymbolTable *, NodeExpr **) { assert(false); }
-          void resolveSymbols(SymbolTable *) { assert(false); }
+          void resolveSymbols(SymbolTable *) { }
           void rewriteFunctionApplications(NodeExpr **) { }
+          void assignUnresolvedTypes() { }
           void compile(Assembly &assembly) {
             assembly.add(move(reinterpret_cast<uint64_t>(&addition_int32_t), rax()));
           }
@@ -1184,6 +1325,7 @@ void NodeExprAdd::rewriteFunctionApplications(NodeExpr **parent) {
       }) (),
       new NodeExprTuple(lhs, rhs));
   
+  (*parent)->resolveSymbols(syms);
   (*parent)->rewriteFunctionApplications(parent);
 }
 
@@ -1199,6 +1341,10 @@ void NodeExprDeclaration::rewriteFunctionApplications(NodeExpr **) {
   // no functions in here
 }
 
+void NodeExprDeclaration::assignUnresolvedTypes() {
+  // there is no unclearness of types in here
+}
+
 void NodeExprDeclaration::compile(Assembly &assembly) {
   // TODO: initialize variable here
   // name->compileL(assembly);
@@ -1207,6 +1353,37 @@ void NodeExprDeclaration::compile(Assembly &assembly) {
 
 void NodeExprDeclaration::compileL(Assembly &assembly) {
   name->compileL(assembly);
+}
+
+void NodeExprAssign::rewriteFunctionApplications(NodeExpr **parent) {
+  rhs->rewriteFunctionApplications(&rhs);
+  lhs->rewriteFunctionApplications(&lhs);
+
+  if(auto rhst = dynamic_cast<TypeFunctionSet *>(rhs->getType())) {
+    if(auto lhst = lhs->getType()) {
+      NodeExpr *newRight = rhst->get(lhst);
+      if(newRight) {
+        rhs = newRight;
+        rhs->rewriteFunctionApplications(&rhs);
+      } else {
+        // create new function set
+        std::string unique = createUniqueIdentifier();
+
+        *parent = new NodeExprUntypedLambda(
+            unique,
+            new NodeStatementExpr(
+              new NodeExprApply(rhs, new NodeIdentifier(unique))),
+            syms);
+
+        (*parent)->rewriteFunctionApplications(parent);
+      }
+    }
+  }
+}
+
+void NodeExprAssign::assignUnresolvedTypes() {
+  lhs->assignUnresolvedTypes();
+  rhs->assignUnresolvedTypes();
 }
 
 void NodeExprAssign::compile(Assembly &assembly) {
@@ -1289,6 +1466,10 @@ void NodeTypedLambda::resolveSymbols(SymbolTable *st) {
 
 void NodeTypedLambda::rewriteFunctionApplications(NodeExpr **) {
   body->rewriteFunctionApplications();
+}
+
+void NodeTypedLambda::assignUnresolvedTypes() {
+  body->assignUnresolvedTypes();
 }
 
 void NodeTypedLambda::compile(Assembly &assembly) {
@@ -1390,6 +1571,62 @@ Type *NodeTypedLambda::getType() {
 void NodeExprUnaryMinus::compile(Assembly &assembly) {
   arg->compile(assembly);
   assembly.add(neg(rax()));
+}
+
+NodeExprUntypedLambda::NodeExprUntypedLambda(const std::string &argumentName, NodeStatement *body, SymbolTable *parentSymbols)
+  : argumentName(argumentName), body(body), syms(parentSymbols) {
+  assert(body);
+  assert(parentSymbols);
+}
+
+void NodeExprUntypedLambda::rewriteDeclarations(SymbolTable *symbols, NodeExpr **parent) {
+}
+
+void NodeExprUntypedLambda::resolveSymbols(SymbolTable *st) {
+  assert(st);
+
+  syms = st;
+}
+
+void NodeExprUntypedLambda::rewriteFunctionApplications(NodeExpr **) {
+  // no rewrites here, as type of the argument tuple variable is still unknown
+}
+
+void NodeExprUntypedLambda::assignUnresolvedTypes() {
+  // this should not be called - these nodes need to be replaced by something uptree setting the type
+  // afterwards the new node will have to get assignUnresolvedTypes called
+  assert(false);
+}
+
+void NodeExprUntypedLambda::compile(Assembly &) {
+  assert(false);
+}
+
+void NodeExprUntypedLambda::compileL(Assembly &) {
+  assert(false);
+}
+
+Type *NodeExprUntypedLambda::getType() {
+  return new TypeNodeBackedFunctionSet(this);
+}
+
+NodeExprFunction *NodeExprUntypedLambda::assignType(Type *type) {
+  if(auto ft = dynamic_cast<TypeFunction *>(type)) {
+    if(ft->getArgumentCount() == 1) {
+      NodeExprFunction *replacement = new NodeTypedLambda(
+          new NodeExprTuple(new NodeExprDeclaration(ft->getArgumentType(0), new NodeIdentifier(argumentName))),
+          ft->getReturnType(),
+          body);
+
+      replacement->rewriteDeclarations(syms, static_cast<NodeExpr **>(0));
+      replacement->resolveSymbols(syms);
+      return replacement;
+    } else {
+      assert(false);
+    }
+  }
+
+  return 0;
 }
 
 unsigned long TreeNode::creations = 0;

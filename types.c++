@@ -155,3 +155,32 @@ void TypeTuple::compile(Assembly &assembly) {
   // TODO: initialize tuples
   assert(false);
 }
+
+bool TypeFunctionSet::canConvertTo(Type *other) {
+  TypeFunction *func = dynamic_cast<TypeFunction *>(other);
+  if(!func) return false;
+
+  TypeTuple *argumentType = new TypeTuple();
+  for(int i = 0; i < func->getArgumentCount(); ++i) {
+    argumentType->addElementType(func->getArgumentType(i));
+  }
+
+  NodeExprFunction *function = get(argumentType);
+  if(!function) return false;
+
+  TypeFunction *resolvedFunc = dynamic_cast<TypeFunction *>(function->getType());
+  if(!resolvedFunc) return false;
+
+  if(!resolvedFunc->getReturnType()->canConvertTo(func->getReturnType())) return false;
+
+  return true;
+}
+
+void TypeFunctionSet::convertTo(Type *other, Assembly &assert) {
+  // TODO
+  assert(false);
+}
+
+NodeExprFunction *TypeNodeBackedFunctionSet::get(Type *t) {
+  return node->assignType(t);
+}

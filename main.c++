@@ -69,6 +69,12 @@ void (*Main::compile(NodeStatement *statement))(Main *) {
   statement->resolveSymbols(&symbolTable);
 
   statement->rewriteFunctionApplications();
+
+  std::cout << statement->dump(0) << std::endl;
+
+  // TODO: maybe kill this again
+  statement->assignUnresolvedTypes();
+
   std::cout << statement->dump(0) << std::endl;
 
   Assembly assembly;

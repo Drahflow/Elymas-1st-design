@@ -1,0 +1,22 @@
+#!/usr/bin/env elymas
+
+[s32] data = [
+  72,
+  -7,
+  11,
+  0,
+  3,
+  -47,
+  55,
+  -18,
+  7,
+  8,
+  -51,
+  -23
+];
+
+s32 d = 0;
+s32→s32 f = (d = d + α);
+d = 1; # does not have any influence on the bound d
+
+putchar f data;
