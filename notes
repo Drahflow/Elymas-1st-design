@@ -59,3 +59,13 @@ and the function body grabs the data area via
   pop %r8
 i.e. r8 is always pointing to the closure data, which is copied when a closure
 is created.
+
+TODO:
+
+1. create a real type system where every node is typed
+2. function upcasts and array autolooping needs to be rewritten
+  2a. find in each argument that part which matches up with the function argument type (and rank)
+  2b. consider first non-empty remaining type, take it's domain
+  2c. find all arguments with compatible domains on their top level
+  2d. take largest explicit domain if any, and create loop for it, otherwise make lambda
+  2e. original argument becomes function call / array indexed access
