@@ -23,6 +23,26 @@ Type *Type::all = new (class _all: public Type {
     void compile(Assembly &assembly) { assert(false); }
 });
 
+Type *Type::boolean = new (class _boolean: public Type {
+  public:
+    bool canConvertTo(Type *t) {
+      // TODO: allow meaningful conversions
+      return t == this;
+    }
+
+    void convertTo(Type *t, Assembly &assembly) {
+      // TODO: allow meaningful conversions
+      assert(t == this);
+    }
+
+    // TODO: once arrays can handly non-8-multiplies, fix this
+    unsigned int getSize() { return 8; }
+
+    void compile(Assembly &assembly) {
+      assembly.add(move(static_cast<uint64_t>(0), rax()));
+    }
+});
+
 Type *Type::sint32 = new (class _sint32: public Type {
   public:
     bool canConvertTo(Type *t) {
@@ -84,11 +104,13 @@ bool TypeFunction::operator == (Type &other) {
 
 std::string TypeFunction::dump(int i) {
   std::ostringstream ret;
-  ret << indent(i) << "TypeFunction\n" << returnType->dump(i + 2);
+  ret << indent(i) << "TypeFunction\n"
+    << indent(i + 2) << "Ret: " << returnType->dump(i) << "\n"
+    << indent(i + 2) << "Args: " << argumentTypes.size();
 
-  for(int i = 0; i < argumentTypes.size(); ++i) {
-    ret << "\n" << indent(i + 2) << "Rank: " << argumentRanks[i] << "\n"
-      << argumentTypes[i]->dump(i + 2);
+  for(int j = 0; j < argumentTypes.size(); ++j) {
+    ret << "\n" << indent(i + 2) << "Rank: " << argumentRanks[j] << "\n"
+      << (argumentTypes[j]? argumentTypes[j]->dump(i + 2): "0x0");
   }
 
   return ret.str();
@@ -154,33 +176,4 @@ bool TypeTuple::canConvertTo(Type *other) {
 void TypeTuple::compile(Assembly &assembly) {
   // TODO: initialize tuples
   assert(false);
-}
-
-bool TypeFunctionSet::canConvertTo(Type *other) {
-  TypeFunction *func = dynamic_cast<TypeFunction *>(other);
-  if(!func) return false;
-
-  TypeTuple *argumentType = new TypeTuple();
-  for(int i = 0; i < func->getArgumentCount(); ++i) {
-    argumentType->addElementType(func->getArgumentType(i));
-  }
-
-  NodeExprFunction *function = get(argumentType);
-  if(!function) return false;
-
-  TypeFunction *resolvedFunc = dynamic_cast<TypeFunction *>(function->getType());
-  if(!resolvedFunc) return false;
-
-  if(!resolvedFunc->getReturnType()->canConvertTo(func->getReturnType())) return false;
-
-  return true;
-}
-
-void TypeFunctionSet::convertTo(Type *other, Assembly &assert) {
-  // TODO
-  assert(false);
-}
-
-NodeExprFunction *TypeNodeBackedFunctionSet::get(Type *t) {
-  return node->assignType(t);
 }
