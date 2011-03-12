@@ -102,6 +102,11 @@ bool TypeFunction::operator == (Type &other) {
   return true;
 }
 
+Type *TypeFunction::generate(Type *ret) {
+  // TODO generate clone with fixed return type
+  assert(false);
+}
+
 std::string TypeFunction::dump(int i) {
   std::ostringstream ret;
   ret << indent(i) << "TypeFunction\n"

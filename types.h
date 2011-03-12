@@ -13,7 +13,6 @@ class Assembly;
 class Type: public NodeExpr {
   public:
     virtual ~Type() { }
-    virtual unsigned int getTupleWidth() { return 1; }
     virtual unsigned int getSize() = 0;
     virtual bool canConvertTo(Type *) = 0;
     virtual void convertTo(Type *other, Assembly &) {
@@ -44,7 +43,7 @@ class Type: public NodeExpr {
 
 class TypeTuple: public Type {
   public:
-    virtual unsigned int getTupleWidth() {
+    unsigned int getTupleWidth() {
       return elementTypes.size();
     }
 
@@ -68,9 +67,15 @@ class TypeTuple: public Type {
     std::vector<Type *> elementTypes;
 };
 
-class TypeLoopable: public Type {
+class TypeDomained: public Type {
   public:
-    virtual Type *getInnerType() {
+    virtual Type *getReturnType() = 0;
+    virtual Type *generate(Type *ret) = 0;
+};
+
+class TypeLoopable: public TypeDomained {
+  public:
+    virtual Type *getReturnType() {
       return innerType;
     }
 
@@ -79,15 +84,13 @@ class TypeLoopable: public Type {
     virtual void loopStepSecondary(Assembly &, Type *result, void *) = 0;
     virtual void loopEnd(Assembly &, Type *result, void *) = 0;
 
-    virtual Type *generate(Type *inner) = 0;
-
   protected:
     TypeLoopable(Type *innerType): innerType(innerType) { }
 
     Type *innerType;
 };
 
-class TypeFunction: public Type {
+class TypeFunction: public TypeDomained {
   public:
     TypeFunction() { }
 
@@ -125,12 +128,12 @@ class TypeFunction: public Type {
     bool operator == (Type &);
     std::string dump(int index);
 
+    Type *generate(Type *ret);
+
   private:
     std::vector<Type *> argumentTypes;
     std::vector<int> argumentRanks;
     Type *returnType;
 };
-
-class NodeExprFunction;
 
 #endif

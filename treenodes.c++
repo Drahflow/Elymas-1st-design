@@ -663,7 +663,7 @@ void NodeExprArray::assignUnresolvedTypes(Type *t) {
   Type *elementType = 0;
 
   if(auto at = dynamic_cast<TypeLoopable *>(t)) {
-    elementType = at->getInnerType();
+    elementType = at->getReturnType();
   }
 
   for(auto i = elements.begin(); i != elements.end(); ++i) {
@@ -808,12 +808,13 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
   Type *at = argument->getType();
 
   if(ft->getArgumentCount() != 1) {
-    while(at->getTupleWidth() == 1) {
-      if(TypeTuple *att = dynamic_cast<TypeTuple *>(at)) {
+    while(1) {
+      if(auto *att = dynamic_cast<TypeTuple *>(at)) {
+        if(att->getTupleWidth() != 1) break;
         at = att->getElementType(0);
-      } else if(TypeLoopable *atl = dynamic_cast<TypeLoopable *>(at)) {
+      } else if(auto *atl = dynamic_cast<TypeLoopable *>(at)) {
         *parent = new NodeExprLoop(argument, -1,
-            new NodeExprApply(function, new RCX(atl->getInnerType())));
+            new NodeExprApply(function, new RCX(atl->getReturnType())));
         (*parent)->rewriteFunctionApplications(parent);
         return;
       } else {
@@ -823,9 +824,16 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
     }
   }
 
-  if(at->getTupleWidth() < ft->getArgumentCount()) {
-    compileError("overload resolution fucked up, "
-        "autolooping is deeply sorry (2): " + function->dump(0));
+  if(auto att = dynamic_cast<TypeTuple *>(at)) {
+    if(att->getTupleWidth() < ft->getArgumentCount()) {
+      compileError("overload resolution fucked up, "
+          "autolooping is deeply sorry (2a): " + function->dump(0));
+    }
+  } else {
+    if(ft->getArgumentCount() > 1) {
+      compileError("overload resolution fucked up, "
+          "autolooping is deeply sorry (2b): " + function->dump(0));
+    }
   }
 
   for(int i = 0; i < ft->getArgumentCount(); ++i) {
@@ -886,7 +894,7 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
             break;
           }
         } else if(TypeLoopable *atl = dynamic_cast<TypeLoopable *>(argt)) {
-          argt = atl->getInnerType();
+          argt = atl->getReturnType();
         } else {
           break;
         }
@@ -920,14 +928,13 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
               "autolooping is deeply sorry (4): " + function->dump(0));
         }
       } else if(TypeLoopable *atl = dynamic_cast<TypeLoopable *>(argt)) {
-        if(at->getTupleWidth() > 1) {
-          TypeTuple *origTuple = dynamic_cast<TypeTuple *>(at);
+        if(auto *origTuple = dynamic_cast<TypeTuple *>(at)) {
           assert(origTuple);
 
           TypeTuple *innerType = new TypeTuple();
-          for(int j = 0; j < at->getTupleWidth(); ++j) {
+          for(int j = 0; j < origTuple->getTupleWidth(); ++j) {
             if(i == j) {
-              innerType->addElementType(atl->getInnerType());
+              innerType->addElementType(atl->getReturnType());
             } else {
               innerType->addElementType(origTuple->getElementType(j));
             }
@@ -937,7 +944,7 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
               new NodeExprApply(function, new RCX(innerType)));
         } else {
           *parent = new NodeExprLoop(argument, -1,
-              new NodeExprApply(function, new RCX(atl->getInnerType())));
+              new NodeExprApply(function, new RCX(atl->getReturnType())));
         }
         (*parent)->rewriteFunctionApplications(parent);
         // TODO: correctly handle co-looping
@@ -975,9 +982,8 @@ void NodeExprApply::compile(Assembly &assembly) {
 
   NodeExpr *arg = argument;
 
-  if(arg->getType()->getTupleWidth() > 1) {
+  if(auto *argt = dynamic_cast<TypeTuple *>(arg->getType())) {
     Register64 *abiArgs[] = { rdi(), rsi(), rdx(), rcx(), r8(), r9() };
-    TypeTuple *argt = dynamic_cast<TypeTuple *>(arg->getType());
     assert(argt);
 
     assembly.add(push(rcx()));
@@ -1083,7 +1089,7 @@ void NodeExprProjection::assignUnresolvedTypes(Type *t) {
     }
 
     while(auto loop = dynamic_cast<TypeLoopable *>(argt)) {
-      argt = loop->getInnerType();
+      argt = loop->getReturnType();
     }
         
     if(auto argtt = dynamic_cast<TypeTuple *>(argt)) {
@@ -1194,7 +1200,7 @@ void NodeExprLoop::compile(Assembly &assembly) {
     TypeTuple *nt = new TypeTuple();
     for(int i = 0; i < tt->getTupleWidth(); ++i) {
       if(i == tupleIndex) {
-        nt->addElementType(ct->getInnerType());
+        nt->addElementType(ct->getReturnType());
       } else {
         nt->addElementType(tt->getElementType(i));
       }
@@ -1439,15 +1445,14 @@ void NodeTypeFunction::rewriteDeclarations(SymbolTable *st, NodeExpr **parent) {
   TypeFunction *func = new TypeFunction();
   func->setReturnType(rett);
 
-  if(argt->getTupleWidth() == 1) {
-    func->addArgument(argt, 1);
-  } else {
-    TypeTuple *args = dynamic_cast<TypeTuple *>(argt);
+  if(TypeTuple *args = dynamic_cast<TypeTuple *>(argt)) {
     assert(args);
 
     for(int i = 0; i < args->getTupleWidth(); ++i) {
       func->addArgument(args->getElementType(i), 1);
     }
+  } else {
+    func->addArgument(argt, 1);
   }
 
   *parent = func;
