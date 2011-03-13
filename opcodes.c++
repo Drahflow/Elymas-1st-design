@@ -59,6 +59,20 @@ namespace opcode {
       }
     } else if(!mem.base) {
       assert(false);
+    } else if(!mem.displacement) {
+      if(mem.index) {
+        if(mem.base->number != 5) {
+          return 2;
+        } else {
+          assert(false);
+        }
+      } else if(mem.base->number != 4 && mem.base->number != 5) {
+        return 1;
+      } else if(mem.base->number == 5) {
+        return 2;
+      } else {
+        assert(false);
+      }
     } else if(mem.displacement <= 127 && mem.displacement >= -128) {
       if(mem.index) {
         assert(false);
@@ -67,21 +81,11 @@ namespace opcode {
       } else {
         assert(false);
       }
-    } else if(mem.displacement) {
+    } else {
       if(mem.index) {
         assert(false);
       } else if(mem.base->number != 4) {
         return 5;
-      } else {
-        assert(false);
-      }
-    } else {
-      if(mem.index) {
-        assert(false);
-      } else if(mem.base->number != 4 && mem.base->number != 5) {
-        return 1;
-      } else if(mem.base->number == 5) {
-        return 2;
       } else {
         assert(false);
       }
@@ -110,6 +114,30 @@ namespace opcode {
       }
     } else if(!mem.base) {
       assert(false);
+    } else if(!mem.displacement) {
+      if(mem.index) {
+        target[0] |= 4;
+        if(mem.base->number != 5) {
+          target[1] = mem.base->number % 8;
+          target[1] |= (mem.index->number % 8) * 0x8;
+          switch(mem.multiplier) {
+            case 1: break;
+            case 2: target[1] |= 0x40; break;
+            case 4: target[1] |= 0x80; break;
+            case 8: target[1] |= 0xC0; break;
+            default: assert(false);
+          }
+        } else {
+          assert(false);
+        }
+      } else if(mem.base->number != 4 && mem.base->number != 5) {
+        target[0] |= mem.base->number % 8;
+      } else if(mem.base->number == 5) {
+        target[0] |= 0x45;
+        target[1] = 0;
+      } else {
+        assert(false);
+      }
     } else if(mem.displacement <= 127 && mem.displacement >= -128) {
       target[0] |= 0x40;
 
@@ -122,7 +150,7 @@ namespace opcode {
       } else {
         assert(false);
       }
-    } else if(mem.displacement) {
+    } else {
       target[0] |= 0x80;
 
       if(mem.index) {
@@ -131,18 +159,6 @@ namespace opcode {
       } else if(mem.base->number != 4) {
         target[0] |= mem.base->number % 8;
         *reinterpret_cast<int32_t *>(target + 1) = mem.displacement;
-      } else {
-        assert(false);
-      }
-    } else {
-      if(mem.index) {
-        target[0] |= 4;
-        assert(false);
-      } else if(mem.base->number != 4 && mem.base->number != 5) {
-        target[0] |= mem.base->number % 8;
-      } else if(mem.base->number == 5) {
-        target[0] |= 0x45;
-        target[1] = 0;
       } else {
         assert(false);
       }
@@ -208,6 +224,16 @@ namespace opcode {
     ret.displacement = disp;
     ret.index = 0;
     ret.multiplier = 0;
+    ret.ripRelative = false;
+    return ret;
+  }
+
+  Memory memory(Register64 *base, Register64 *index, int multiplier) {
+    Memory ret;
+    ret.base = base;
+    ret.displacement = 0;
+    ret.index = index;
+    ret.multiplier = multiplier;
     ret.ripRelative = false;
     return ret;
   }

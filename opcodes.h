@@ -140,6 +140,7 @@ namespace opcode {
 
   Memory memory(Register64 *base);
   Memory memory(int32_t disp, Register64 *base);
+  Memory memory(Register64 *base, Register64 *index, int multiplier);
   Memory memory(RegisterRIP *);
   Memory memory(int32_t disp, RegisterRIP *);
 };
