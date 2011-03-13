@@ -71,6 +71,10 @@ class TypeDomained: public Type {
   public:
     virtual Type *getReturnType() = 0;
     virtual Type *generate(Type *ret) = 0;
+
+    virtual unsigned int getArgumentCount() = 0;
+    virtual int getArgumentRank(unsigned int i) = 0;
+    virtual Type *getArgumentType(unsigned int i) = 0;
 };
 
 class TypeLoopable: public TypeDomained {
@@ -83,6 +87,12 @@ class TypeLoopable: public TypeDomained {
     virtual void loopStep(Assembly &, Type *result, void *) = 0;
     virtual void loopStepSecondary(Assembly &, Type *result, void *) = 0;
     virtual void loopEnd(Assembly &, Type *result, void *) = 0;
+
+    // take index in %rcx, object in %rax
+    // return result in %rax
+    virtual void dereference(Assembly &) = 0;
+
+    virtual unsigned int getArgumentCount() { return 1; }
 
   protected:
     TypeLoopable(Type *innerType): innerType(innerType) { }

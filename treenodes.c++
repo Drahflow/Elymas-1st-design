@@ -633,6 +633,22 @@ class TypeArray: public TypeLoopable {
       // TODO: initialize arrays
       assert(false);
     }
+
+    int getArgumentRank(unsigned int) {
+      return 1;
+    }
+
+    Type *getArgumentType(unsigned int) {
+      return Type::sint32;
+    }
+
+    void dereference(Assembly &assembly) {
+      switch(innerType->getSize()) {
+        case 8: assembly.add(move(memory(rax(), rcx(), 8), rax()));
+                break;
+        default: assert(false);
+      }
+    }
 };
 
 void NodeExprArray::rewriteDeclarations(SymbolTable *st, NodeExpr **parent) {
@@ -799,10 +815,12 @@ static std::string createUniqueIdentifier() {
 // 5. (repeatedly) invoke the function until all elements have
 //    been processed
 // 6. if no function of the overload set matched, report error
+// FIXME: REWRITE THIS WHOLE FUNCTION
+//   FIXME: make array looping use local array derefs with unique names
 void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
   argument->rewriteFunctionApplications(&argument);
 
-  TypeFunction *ft = dynamic_cast<TypeFunction *>(function->getType());
+  TypeDomained *ft = dynamic_cast<TypeDomained *>(function->getType());
   if(!ft) compileError("cannot apply non-function " + function->dump(0));
 
   Type *at = argument->getType();
@@ -893,8 +911,8 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
           } else {
             break;
           }
-        } else if(TypeLoopable *atl = dynamic_cast<TypeLoopable *>(argt)) {
-          argt = atl->getReturnType();
+        } else if(auto *atd = dynamic_cast<TypeDomained *>(argt)) {
+          argt = atd->getReturnType();
         } else {
           break;
         }
@@ -975,76 +993,82 @@ void NodeExprApply::assignUnresolvedTypes(Type *) {
 }
 
 void NodeExprApply::compile(Assembly &assembly) {
-  TypeFunction *ft = dynamic_cast<TypeFunction *>(function->getType());
-  assert(ft);
+  if(auto ft = dynamic_cast<TypeFunction *>(function->getType())) {
+    Type *at = argument->getType();
 
-  Type *at = argument->getType();
+    NodeExpr *arg = argument;
 
-  NodeExpr *arg = argument;
+    if(auto *argt = dynamic_cast<TypeTuple *>(arg->getType())) {
+      Register64 *abiArgs[] = { rdi(), rsi(), rdx(), rcx(), r8(), r9() };
+      assert(argt);
 
-  if(auto *argt = dynamic_cast<TypeTuple *>(arg->getType())) {
-    Register64 *abiArgs[] = { rdi(), rsi(), rdx(), rcx(), r8(), r9() };
-    assert(argt);
+      assembly.add(push(rcx()));
+      assembly.add(push(rdx()));
+      assembly.add(push(rsi()));
+      assembly.add(push(rdi()));
+      assembly.add(push(r8()));
+      assembly.add(push(r9()));
+      assembly.add(push(r10()));
+      assembly.add(push(r11()));
+      assembly.add(cld());
+      arg->compile(assembly);
+      int32_t offset = 0;
+      for(int i = 0; i < ft->getArgumentCount(); ++i) {
+        assert(i < 6); // TODO: further arguments go onto stack
 
-    assembly.add(push(rcx()));
-    assembly.add(push(rdx()));
-    assembly.add(push(rsi()));
-    assembly.add(push(rdi()));
-    assembly.add(push(r8()));
-    assembly.add(push(r9()));
-    assembly.add(push(r10()));
-    assembly.add(push(r11()));
-    assembly.add(cld());
-    arg->compile(assembly);
-    int32_t offset = 0;
-    for(int i = 0; i < ft->getArgumentCount(); ++i) {
-      assert(i < 6); // TODO: further arguments go onto stack
-
-      Type *argti = argt->getElementType(i);
+        Type *argti = argt->getElementType(i);
+        // TODO: what about non-integer types?
+        assembly.add(move(memory(offset, rax()), abiArgs[i]));
+        argti->convertTo(ft->getArgumentType(i), assembly);
+        offset += argti->getSize();
+      }
+      function->compile(assembly);
+      assembly.add(call(rax()));
+      assembly.add(pop(r11()));
+      assembly.add(pop(r10()));
+      assembly.add(pop(r9()));
+      assembly.add(pop(r8()));
+      assembly.add(pop(rdi()));
+      assembly.add(pop(rsi()));
+      assembly.add(pop(rdx()));
+      assembly.add(pop(rcx()));
+    } else if(ft->getArgumentCount() == 1) {
+      assembly.add(push(rcx()));
+      assembly.add(push(rdx()));
+      assembly.add(push(rsi()));
+      assembly.add(push(rdi()));
+      assembly.add(push(r8()));
+      assembly.add(push(r9()));
+      assembly.add(push(r10()));
+      assembly.add(push(r11()));
+      assembly.add(cld());
+      arg->compile(assembly);
+      arg->getType()->convertTo(ft->getArgumentType(0), assembly);
       // TODO: what about non-integer types?
-      assembly.add(move(memory(offset, rax()), abiArgs[i]));
-      argti->convertTo(ft->getArgumentType(i), assembly);
-      offset += argti->getSize();
+      assembly.add(move(rax(), rdi()));
+      function->compile(assembly);
+      assembly.add(call(rax()));
+      assembly.add(pop(r11()));
+      assembly.add(pop(r10()));
+      assembly.add(pop(r9()));
+      assembly.add(pop(r8()));
+      assembly.add(pop(rdi()));
+      assembly.add(pop(rsi()));
+      assembly.add(pop(rdx()));
+      assembly.add(pop(rcx()));
+      return;
+    } else {
+      assert(false);
+      compileError("type resolution fucked up while applying " +
+          function->dump(0));
     }
-    function->compile(assembly);
-    assembly.add(call(rax()));
-    assembly.add(pop(r11()));
-    assembly.add(pop(r10()));
-    assembly.add(pop(r9()));
-    assembly.add(pop(r8()));
-    assembly.add(pop(rdi()));
-    assembly.add(pop(rsi()));
-    assembly.add(pop(rdx()));
-    assembly.add(pop(rcx()));
-  } else if(ft->getArgumentCount() == 1) {
+  } else if(auto lt = dynamic_cast<TypeLoopable *>(function->getType())) {
     assembly.add(push(rcx()));
-    assembly.add(push(rdx()));
-    assembly.add(push(rsi()));
-    assembly.add(push(rdi()));
-    assembly.add(push(r8()));
-    assembly.add(push(r9()));
-    assembly.add(push(r10()));
-    assembly.add(push(r11()));
-    assembly.add(cld());
-    arg->compile(assembly);
-    arg->getType()->convertTo(ft->getArgumentType(0), assembly);
-    // TODO: what about non-integer types?
-    assembly.add(move(rax(), rdi()));
+    argument->compile(assembly);
+    assembly.add(move(rax(), rcx()));
     function->compile(assembly);
-    assembly.add(call(rax()));
-    assembly.add(pop(r11()));
-    assembly.add(pop(r10()));
-    assembly.add(pop(r9()));
-    assembly.add(pop(r8()));
-    assembly.add(pop(rdi()));
-    assembly.add(pop(rsi()));
-    assembly.add(pop(rdx()));
+    lt->dereference(assembly);
     assembly.add(pop(rcx()));
-    return;
-  } else {
-    assert(false);
-    compileError("type resolution fucked up while applying " +
-        function->dump(0));
   }
 }
 
@@ -1053,10 +1077,10 @@ void NodeExprApply::compileL(Assembly &assembly) {
 }
 
 Type *NodeExprApply::getType() {
-  TypeFunction *ft = dynamic_cast<TypeFunction *>(function->getType());
-  assert(ft);
+  auto dt = dynamic_cast<TypeDomained *>(function->getType());
+  assert(dt);
 
-  return ft->getReturnType();
+  return dt->getReturnType();
 }
 
 std::string NodeExprApply::dump(int i) {
