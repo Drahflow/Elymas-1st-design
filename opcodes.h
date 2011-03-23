@@ -66,6 +66,7 @@ namespace opcode {
   Opcode *neg(Register64 *);
   Opcode *pop(Register64 *);
   Opcode *push(Register64 *);
+  Opcode *shr(uint8_t, Register64 *);
   Opcode *sub(Register64 *, Register64 *);
   Opcode *retnear();
 

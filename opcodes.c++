@@ -420,6 +420,24 @@ namespace opcode {
     }) (reg);
   }
 
+  Opcode *shr(uint8_t amount, Register64 *reg) {
+    return new (class _: public Opcode {
+      public:
+        _(uint8_t amount, Register64 *reg): amount(amount), reg(reg) { }
+        int size(int) { return 4; }
+        void write(unsigned char *target) {
+          target[0] = rex(1, 0, 0, reg);
+          target[1] = 0xC1;
+          target[2] = rmbyte(5, reg);
+          *reinterpret_cast<uint8_t *>(target + 3) = amount;
+        }
+
+      private:
+        uint8_t amount;
+        Register64 *reg;
+    }) (amount, reg);
+  }
+
   Opcode *sub(Register64 *reg1, Register64 *reg2) {
     return new (class _: public Opcode {
       public:
