@@ -1,0 +1,29 @@
+#!/usr/bin/env elymas
+
+[s32] data = [
+  72,
+  65,
+  76,
+  76,
+  79,
+  32,
+  87,
+  69,
+  76,
+  84,
+  33,
+  10
+];
+
+putchar data 0;
+putchar data 1;
+putchar data 2;
+putchar data 3;
+putchar data 4;
+putchar data 5;
+putchar data 6;
+putchar data 7;
+putchar data 8;
+putchar data 9;
+putchar data 10;
+putchar data 11;
