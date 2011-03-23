@@ -83,9 +83,19 @@ class TypeLoopable: public TypeDomained {
       return innerType;
     }
 
+    // takes container in %rax, creates target structure with same key set in %rax
+    virtual void loopGenerate(Assembly &, Type *result) = 0;
+
+    // takes container in %rax, returns first key in %rcx
+    // creates necessary looping label, jumps to end if loop is completed
     virtual void *loopBegin(Assembly &, Type *result) = 0;
-    virtual void loopStep(Assembly &, Type *result, void *) = 0;
-    virtual void loopStepSecondary(Assembly &, Type *result, void *) = 0;
+    // takes target container in %rdx, current key in %rcx, data in %rax, copies data into %rcx bucket of target container
+    virtual void loopSaveResult(Assembly &, Type *result) = 0;
+    // takes container in %rax, current key in %rcx, returns next key in %rcx
+    virtual void loopStep(Assembly &, Type *result) = 0;
+    // takes container in %rax, foreign key in %rcx, returns correct local key in %rcx
+    virtual void loopAdjustKey(Assembly &, Type *result) = 0;
+    // takes container in %rax, jumps to start label
     virtual void loopEnd(Assembly &, Type *result, void *) = 0;
 
     // take index in %rcx, object in %rax

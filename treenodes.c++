@@ -562,14 +562,11 @@ class TypeArray: public TypeLoopable {
       Label *end;
     };
 
-    void *loopBegin(Assembly &assembly, Type *result) {
+    void loopGenerate(Assembly &assembly, Type *result) {
       assembly.add(push(rdx()));
-      assembly.add(push(rcx()));
-      assembly.add(push(rbx()));
       assembly.add(push(rdi()));
-      assembly.add(move(rax(), rbx()));
 
-      assembly.add(move(memory(-8, rbx()), rax()));
+      assembly.add(move(memory(-8, rax()), rax()));
       // TODO: mask lower bits
       assembly.add(move(innerType->getSize(), rdi()));
       assembly.add(move(static_cast<uint64_t>(0), rdx()));
@@ -577,54 +574,50 @@ class TypeArray: public TypeLoopable {
       assembly.add(move(result->getSize(), rdi()));
       assembly.add(mul(rdi()));
       alloc(assembly, rax());
-      assembly.add(move(rax(), rdi()));
-      assembly.add(push(rdi()));
 
-      assembly.add(move(rbx(), rdx()));
+      assembly.add(pop(rdi()));
+      assembly.add(pop(rdx()));
+    }
+
+    void *loopBegin(Assembly &assembly, Type *result) {
       LoopLabels *labels = new LoopLabels();
       labels->start = assembly.label();
       labels->end = assembly.label();
 
+      assembly.add(move(static_cast<uint64_t>(0), rcx()));
       assembly.add(labels->start);
-      assembly.add(move(rbx(), rcx()));
-      assembly.add(sub(rdx(), rcx()));
-      assembly.add(move(memory(-8, rdx()), rax()));
+      assembly.add(move(memory(-8, rax()), rax()));
       // TODO: mask lower 3 bits
+      switch(innerType->getSize()) {
+        case 8: assembly.add(shr(3, rax())); break;
+        default: assert(false);
+      }
       assembly.add(cmp(rax(), rcx()));
       assembly.add(jae(labels->end));
-
-      assembly.add(move(memory(rbx()), rcx()));
 
       return labels;
     }
 
-    void loopStep(Assembly &, Type *, void *) { }
+    void loopStep(Assembly &assembly, Type *) {
+      assembly.add(add(static_cast<int32_t>(1), rcx()));
+    }
 
-    void loopStepSecondary(Assembly &, Type *, void *) {
+    void loopAdjustKey(Assembly &, Type *) {
       assert(false);
+    }
+
+    void loopSaveResult(Assembly &assembly, Type *result) {
+      switch(result->getSize()) {
+        case 8: assembly.add(move(rax(), memory(rdx(), rcx(), 8))); break;
+        default:
+          assert(false);
+      }
     }
 
     void loopEnd(Assembly &assembly, Type *result, void *data) {
       LoopLabels *labels = reinterpret_cast<LoopLabels *>(data);
-      switch(result->getSize()) {
-        case 8:
-          assembly.add(move(rax(), memory(rdi())));
-          break;
-        default:
-          assert(false);
-      }
-
-      assembly.add(add(innerType->getSize(), rbx()));
-      assembly.add(add(innerType->getSize(), rdi()));
       assembly.add(jmp(labels->start));
       assembly.add(labels->end);
-
-      assembly.add(pop(rdi()));
-      assembly.add(move(rdi(), rax()));
-      assembly.add(pop(rdi()));
-      assembly.add(pop(rbx()));
-      assembly.add(pop(rcx()));
-      assembly.add(pop(rdx()));
 
       delete labels;
     }
@@ -795,28 +788,25 @@ static std::string createUniqueIdentifier() {
   return str.str();
 }
 
-// 1. for each function of the overload set
-// 2. from top to bottom search for tuples of right count
+// 1. from top to bottom search for tuples of right count
 //    one-tuples and scalars are skipped (unless function has 1 argument)
 //    lists are looped (but if 1 argument function, top level tuple matches)
-// 3. for each argument of the function, search within the
+// 2. for each argument of the function, search within the
 //    appropriate element of the tuple, with the search algorithm
 //    specified by rank of the argument
 //    one-tuples and scalars are skipped (unless matching)
 //    lists are looped (if traversed)
-// 4. create unified (except for initial tuple scan) loops
+// 3. create unified (except for initial tuple scan) loops
 //    start from top of types
-//    4a. take the type of the leftmost argument
-//    4b. all arguments with a compatible loopable type are looped
+//    3a. take the type of the leftmost argument
+//    3b. all arguments with a compatible loopable type are looped
 //        the result dimension is of the looped type (or their supertypes)
-//    4c. all arguments with an incomptible type are not looped but
+//    3c. all arguments with an incomptible type are not looped but
 //        replicated along the dimension
-//    4d. all arguments looped have their topmost type removed accordingly
-// 5. (repeatedly) invoke the function until all elements have
+//    3d. all arguments looped have their topmost type removed accordingly
+// 4. (repeatedly) invoke the function until all elements have
 //    been processed
-// 6. if no function of the overload set matched, report error
 // FIXME: REWRITE THIS WHOLE FUNCTION
-//   FIXME: make array looping use local array derefs with unique names
 void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
   argument->rewriteFunctionApplications(&argument);
 
@@ -831,8 +821,14 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
         if(att->getTupleWidth() != 1) break;
         at = att->getElementType(0);
       } else if(auto *atl = dynamic_cast<TypeLoopable *>(at)) {
-        *parent = new NodeExprLoop(argument, -1,
-            new NodeExprApply(function, new RCX(atl->getReturnType())));
+        auto argName = createUniqueIdentifier();
+        auto keyName = createUniqueIdentifier();
+
+        *parent = new NodeExprLoop(argument, argName, keyName,
+            new NodeExprApply(function, new NodeExprApply(new NodeIdentifier(argName), new NodeIdentifier(keyName))));
+        (*parent)->rewriteDeclarations(syms, parent);
+        (*parent)->resolveSymbols(syms);
+        (*parent)->assignUnresolvedTypes(getType());
         (*parent)->rewriteFunctionApplications(parent);
         return;
       } else {
@@ -958,12 +954,17 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
             }
           }
 
-          *parent = new NodeExprLoop(argument, i,
-              new NodeExprApply(function, new RCX(innerType)));
+          assert(false);
         } else {
-          *parent = new NodeExprLoop(argument, -1,
-              new NodeExprApply(function, new RCX(atl->getReturnType())));
+          auto argName = createUniqueIdentifier();
+          auto keyName = createUniqueIdentifier();
+
+          *parent = new NodeExprLoop(argument, argName, keyName,
+              new NodeExprApply(function, new NodeExprApply(new NodeIdentifier(argName), new NodeIdentifier(keyName))));
         }
+        (*parent)->rewriteDeclarations(syms, parent);
+        (*parent)->resolveSymbols(syms);
+        (*parent)->assignUnresolvedTypes(getType());
         (*parent)->rewriteFunctionApplications(parent);
         // TODO: correctly handle co-looping
         return;
@@ -1178,16 +1179,30 @@ Type *NodeExprProjection::getType() {
   return type;
 }
 
-void NodeExprLoop::rewriteDeclarations(SymbolTable *, NodeExpr **) {
-  // these nodes should only be created after symbol resolution has
-  // already taken place
-  assert(false);
+void NodeExprLoop::rewriteDeclarations(SymbolTable *st, NodeExpr **) {
+  auto contType = dynamic_cast<TypeLoopable *>(container->getType());
+  assert(contType);
+
+  if(!contId) {
+    targetName = createUniqueIdentifier();
+
+    st->addVar(contName, contType);
+    st->addVar(keyName, contType->getReturnType());
+    st->addVar(targetName, contType->generate(expr->getType()));
+
+    contId = new NodeIdentifier(contName);
+    keyId = new NodeIdentifier(keyName);
+    targetId = new NodeIdentifier(targetName);
+  }
 }
 
-void NodeExprLoop::resolveSymbols(SymbolTable *) {
-  // these nodes should only be created after symbol resolution has
-  // already taken place
-  assert(false);
+void NodeExprLoop::resolveSymbols(SymbolTable *st) {
+  contId->resolveSymbols(st);
+  keyId->resolveSymbols(st);
+  targetId->resolveSymbols(st);
+
+  container->resolveSymbols(st);
+  expr->resolveSymbols(st);
 }
 
 void NodeExprLoop::rewriteFunctionApplications(NodeExpr **parent) {
@@ -1196,78 +1211,116 @@ void NodeExprLoop::rewriteFunctionApplications(NodeExpr **parent) {
 }
 
 void NodeExprLoop::assignUnresolvedTypes(Type *t) {
-  // TODO: unravel container
-  assert(false);
-
-  container->assignUnresolvedTypes(0);
-  expr->assignUnresolvedTypes(0);
+  if(auto lt = dynamic_cast<TypeLoopable *>(t)) {
+    container->assignUnresolvedTypes(0);
+    expr->assignUnresolvedTypes(lt->getReturnType());
+  } else {
+    container->assignUnresolvedTypes(0);
+    expr->assignUnresolvedTypes(0);
+  }
 }
 
 void NodeExprLoop::compile(Assembly &assembly) {
-  if(tupleIndex == -1) {
-    TypeLoopable *ct = dynamic_cast<TypeLoopable *>(container->getType());
-    assert(ct);
-    Type *result = expr->getType();
+  TypeLoopable *ct = dynamic_cast<TypeLoopable *>(container->getType());
+  assert(ct);
+  Type *result = expr->getType();
 
-    container->compile(assembly);
-    void *data = ct->loopBegin(assembly, result);
-    ct->loopStep(assembly, result, data);
-    expr->compile(assembly);
-    ct->loopEnd(assembly, result, data);
-  } else {
-    TypeTuple *tt = dynamic_cast<TypeTuple *>(container->getType());
-    assert(tt);
-    TypeLoopable *ct = dynamic_cast<TypeLoopable *>(tt->getElementType(tupleIndex));
-    assert(ct);
-    Type *result = expr->getType();
+  // TODO
+  assert(container->getType()->getSize() == 8);
 
-    TypeTuple *nt = new TypeTuple();
-    for(int i = 0; i < tt->getTupleWidth(); ++i) {
-      if(i == tupleIndex) {
-        nt->addElementType(ct->getReturnType());
-      } else {
-        nt->addElementType(tt->getElementType(i));
-      }
-    }
+  assembly.add(push(rbx()));
+  assembly.add(push(rcx()));
+  assembly.add(push(rdx()));
 
-    container->compile(assembly);
-    assembly.add(push(rsi()));
-    assembly.add(move(rax(), rsi()));
-    assembly.add(move(memory(tt->getElementOffset(tupleIndex), rsi()), rax()));
-    void *data = ct->loopBegin(assembly, result);
-    ct->loopStep(assembly, result, data);
+  contId->compileL(assembly);
+  assembly.add(move(rax(), rbx()));
+  container->compile(assembly);
+  assembly.add(move(rax(), memory(rbx())));
 
-    alloc(assembly, nt->getHeapSize());
+  targetId->compileL(assembly);
+  assembly.add(move(rax(), rdx()));
+  container->compile(assembly);
+  ct->loopGenerate(assembly, result);
+  assembly.add(move(rax(), memory(rdx())));
 
-    for(int i = 0; i < tt->getTupleWidth(); ++i) {
-      if(i == tupleIndex) {
-        switch(tt->getElementType(i)->getSize()) {
-          case 8:
-            assembly.add(move(rcx(), memory(nt->getElementOffset(i), rax())));
-            break;
-          default:
-            assert(false);
-        }
-      } else {
-        switch(tt->getElementType(i)->getSize()) {
-          case 8:
-            assembly.add(push(rdx()));
-            assembly.add(move(memory(tt->getElementOffset(i), rsi()), rdx()));
-            assembly.add(move(rdx(), memory(nt->getElementOffset(i), rax())));
-            assembly.add(pop(rdx()));
-            break;
-          default:
-            assert(false);
-        }
-      }
-    }
-    
-    assembly.add(move(rax(), rcx()));
-    expr->compile(assembly);
-    ct->loopEnd(assembly, result, data);
+  assembly.add(move(memory(rbx()), rax()));
+  void *data = ct->loopBegin(assembly, result);
+  keyId->compileL(assembly);
+  assembly.add(move(rcx(), memory(rax())));
 
-    assembly.add(pop(rsi()));
-  }
+  targetId->compile(assembly);
+  assembly.add(move(rax(), rdx()));
+  keyId->compile(assembly);
+  assembly.add(move(rax(), rcx()));
+  expr->compile(assembly);
+  ct->loopSaveResult(assembly, result);
+
+  assembly.add(move(memory(rbx()), rax()));
+  ct->loopStep(assembly, result);
+
+  assembly.add(move(memory(rbx()), rax()));
+  ct->loopEnd(assembly, result, data);
+
+  assembly.add(pop(rdx()));
+  assembly.add(pop(rcx()));
+  assembly.add(pop(rbx()));
+
+  targetId->compile(assembly);
+
+//  } else {
+//    TypeTuple *tt = dynamic_cast<TypeTuple *>(container->getType());
+//    assert(tt);
+//    TypeLoopable *ct = dynamic_cast<TypeLoopable *>(tt->getElementType(tupleIndex));
+//    assert(ct);
+//    Type *result = expr->getType();
+//
+//    TypeTuple *nt = new TypeTuple();
+//    for(int i = 0; i < tt->getTupleWidth(); ++i) {
+//      if(i == tupleIndex) {
+//        nt->addElementType(ct->getReturnType());
+//      } else {
+//        nt->addElementType(tt->getElementType(i));
+//      }
+//    }
+//
+//    container->compile(assembly);
+//    assembly.add(push(rsi()));
+//    assembly.add(move(rax(), rsi()));
+//    assembly.add(move(memory(tt->getElementOffset(tupleIndex), rsi()), rax()));
+//    void *data = ct->loopBegin(assembly, result);
+//    ct->loopStep(assembly, result, data);
+//
+//    alloc(assembly, nt->getHeapSize());
+//
+//    for(int i = 0; i < tt->getTupleWidth(); ++i) {
+//      if(i == tupleIndex) {
+//        switch(tt->getElementType(i)->getSize()) {
+//          case 8:
+//            assembly.add(move(rcx(), memory(nt->getElementOffset(i), rax())));
+//            break;
+//          default:
+//            assert(false);
+//        }
+//      } else {
+//        switch(tt->getElementType(i)->getSize()) {
+//          case 8:
+//            assembly.add(push(rdx()));
+//            assembly.add(move(memory(tt->getElementOffset(i), rsi()), rdx()));
+//            assembly.add(move(rdx(), memory(nt->getElementOffset(i), rax())));
+//            assembly.add(pop(rdx()));
+//            break;
+//          default:
+//            assert(false);
+//        }
+//      }
+//    }
+//    
+//    assembly.add(move(rax(), rcx()));
+//    expr->compile(assembly);
+//    ct->loopEnd(assembly, result, data);
+//
+//    assembly.add(pop(rsi()));
+//  }
 }
 
 void NodeExprLoop::compileL(Assembly &assembly) {
@@ -1276,20 +1329,10 @@ void NodeExprLoop::compileL(Assembly &assembly) {
 
 Type *NodeExprLoop::getType() {
   if(!type) {
-    if(tupleIndex == -1) {
-      TypeLoopable *tl = dynamic_cast<TypeLoopable *>(container->getType());
-      assert(tl);
+    TypeLoopable *tl = dynamic_cast<TypeLoopable *>(container->getType());
+    assert(tl);
 
-      type = tl->generate(expr->getType());
-    } else {
-      TypeTuple *tt = dynamic_cast<TypeTuple *>(container->getType());
-      assert(tt);
-      TypeLoopable *tl =
-        dynamic_cast<TypeLoopable *>(tt->getElementType(tupleIndex));
-      assert(tl);
-
-      type = tl->generate(expr->getType());
-    }
+    type = tl->generate(expr->getType());
   }
 
   return type;
@@ -1298,7 +1341,7 @@ Type *NodeExprLoop::getType() {
 std::string NodeExprLoop::dump(int i) {
   std::ostringstream str;
   str << indent(i) <<
-    "NodeExprLoop (index: " << tupleIndex << ")\n"
+    "NodeExprLoop (container: " << contName << ", key: " << keyName << ", target: " << targetName << ")\n"
     << container->dump(i + 2) << "\n"
     << expr->dump(i + 2);
   return str.str();

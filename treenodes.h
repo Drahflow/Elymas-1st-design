@@ -538,8 +538,8 @@ class NodeExprMod: public NodeExprBinary {
 
 class NodeExprLoop: public NodeExpr {
   public:
-    NodeExprLoop(NodeExpr *container, int tupleIndex, NodeExpr *expr)
-      : container(container), tupleIndex(tupleIndex), expr(expr), type(0) { }
+    NodeExprLoop(NodeExpr *container, const std::string &contName, const std::string &keyName, NodeExpr *expr)
+      : container(container), contName(contName), keyName(keyName), contId(0), keyId(0), targetId(0), expr(expr), type(0) { }
 
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
@@ -552,7 +552,12 @@ class NodeExprLoop: public NodeExpr {
 
   private:
     NodeExpr *container;
-    int tupleIndex;
+    std::string contName;
+    std::string keyName;
+    std::string targetName;
+    NodeIdentifier *contId;
+    NodeIdentifier *keyId;
+    NodeIdentifier *targetId;
     NodeExpr *expr;
     Type *type;
 };
