@@ -178,14 +178,14 @@ void NodeExprBinary::assignUnresolvedTypes(Type *t) {
   Type *lt = lhs->getType();
   Type *rt = rhs->getType();
 
-  TypeFunction *ft = dynamic_cast<TypeFunction *>(t);
-  if(!ft) ft = dynamic_cast<TypeFunction *>(lt);
-  if(!ft) ft = dynamic_cast<TypeFunction *>(rt);
+  TypeDomained *ft = dynamic_cast<TypeDomained *>(t);
+  if(!ft) ft = dynamic_cast<TypeDomained *>(lt);
+  if(!ft) ft = dynamic_cast<TypeDomained *>(rt);
 
   if(ft) {
     assert(!t || *ft == *t || *(ft->getReturnType()) == *t);
-    assert(*ft == *lt || *(ft->getReturnType()) == *lt);
-    assert(*ft == *rt || *(ft->getReturnType()) == *rt);
+    assert(*ft == *lt || !ft->getReturnType() || *(ft->getReturnType()) == *lt);
+    assert(*ft == *rt || !ft->getReturnType() || *(ft->getReturnType()) == *rt);
 
     type = ft;
   } else {
@@ -402,17 +402,25 @@ void NodeExprTuple::rewriteDeclarations(SymbolTable *st, NodeExpr **parent) {
   }
 
   if(elements.size() && dynamic_cast<Type *>(elements.front())) {
-    TypeTuple *typeTuple = new TypeTuple();
-
-    for(auto i = elements.begin(); i != elements.end(); ++i) {
-      Type *type = dynamic_cast<Type *>(*i);
+    if(elements.size() == 1) {
+      Type *type = dynamic_cast<Type *>(elements.front());
       assert(type);
 
-      typeTuple->addElementType(type);
-    }
+      assert(parent);
+      *parent = type;
+    } else {
+      TypeTuple *typeTuple = new TypeTuple();
 
-    assert(parent);
-    *parent = typeTuple;
+      for(auto i = elements.begin(); i != elements.end(); ++i) {
+        Type *type = dynamic_cast<Type *>(*i);
+        assert(type);
+
+        typeTuple->addElementType(type);
+      }
+
+      assert(parent);
+      *parent = typeTuple;
+    }
   }
 }
 
@@ -450,7 +458,7 @@ void NodeExprTuple::assignUnresolvedTypes(Type *t) {
   }
 }
 
-template<class T> static void alloc(Assembly &assembly, T size) {
+template<class T> static void allocImpl(Assembly &assembly, T size) {
   assembly.add(push(rcx()));
   assembly.add(push(rdx()));
   assembly.add(push(rsi()));
@@ -473,12 +481,22 @@ template<class T> static void alloc(Assembly &assembly, T size) {
   assembly.add(pop(rcx()));
 }
 
+template<class T> static void alloc(Assembly &assembly, T size) { allocImpl(assembly, size); }
+template<> void alloc<unsigned int>(Assembly &assembly, unsigned int size) {
+  assert(!(size & 3));
+
+  allocImpl(assembly, size);
+}
+
 void NodeExprTuple::compile(Assembly &assembly) {
   getType();
   assert(type);
 
-  if(type->getTupleWidth() != 1) {
-    alloc(assembly, type->getHeapSize());
+  if(elements.size() != 1) {
+    auto typet = dynamic_cast<TypeTuple *>(type);
+    assert(typet);
+
+    alloc(assembly, typet->getHeapSize());
     assembly.add(push(rcx()));
     assembly.add(move(rax(), rcx()));
 
@@ -500,6 +518,8 @@ void NodeExprTuple::compile(Assembly &assembly) {
 
     assembly.add(move(rcx(), rax()));
     assembly.add(pop(rcx()));
+  } else {
+    elements[0]->compile(assembly);
   }
 }
 
@@ -509,15 +529,22 @@ void NodeExprTuple::compileL(Assembly &assembly) {
 
 Type *NodeExprTuple::getType() {
   if(!type) {
-    type = new TypeTuple();
-    for(auto i = elements.begin(); i != elements.end(); ++i) {
-      Type *et = (*i)->getType();
-      if(dynamic_cast<TypeTuple *>(et)) {
-        // TODO: flatten
-        assert(false);
-      } else {
-        type->addElementType(et);
+    if(elements.size() == 1) {
+      type = elements[0]->getType();
+    } else {
+      TypeTuple *typet = new TypeTuple();
+      for(auto i = elements.begin(); i != elements.end(); ++i) {
+        Type *et = (*i)->getType();
+        if(auto ett = dynamic_cast<TypeTuple *>(et)) {
+          for(int j = 0; j < ett->getTupleWidth(); ++j) {
+            typet->addElementType(ett->getElementType(j));
+          }
+        } else {
+          typet->addElementType(et);
+        }
       }
+
+      type = typet;
     }
   }
 
@@ -810,6 +837,11 @@ static std::string createUniqueIdentifier() {
 void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
   argument->rewriteFunctionApplications(&argument);
 
+  if(auto tt = dynamic_cast<TypeTuple *>(function->getType())) {
+    assert(tt->getTupleWidth() != 1);
+    assert(false); // TODO: this should produce a tuple of the results
+  }
+
   TypeDomained *ft = dynamic_cast<TypeDomained *>(function->getType());
   if(!ft) compileError("cannot apply non-function " + function->dump(0));
 
@@ -962,6 +994,7 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
           *parent = new NodeExprLoop(argument, argName, keyName,
               new NodeExprApply(function, new NodeExprApply(new NodeIdentifier(argName), new NodeIdentifier(keyName))));
         }
+
         (*parent)->rewriteDeclarations(syms, parent);
         (*parent)->resolveSymbols(syms);
         (*parent)->assignUnresolvedTypes(getType());
@@ -1070,6 +1103,8 @@ void NodeExprApply::compile(Assembly &assembly) {
     function->compile(assembly);
     lt->dereference(assembly);
     assembly.add(pop(rcx()));
+  } else {
+    assert(false);
   }
 }
 
@@ -1078,7 +1113,14 @@ void NodeExprApply::compileL(Assembly &assembly) {
 }
 
 Type *NodeExprApply::getType() {
-  auto dt = dynamic_cast<TypeDomained *>(function->getType());
+  Type *t = function->getType();
+
+  if(auto tt = dynamic_cast<TypeTuple *>(t)) {
+    assert(tt->getTupleWidth() != 1);
+    assert(false); // TODO: actually there should be a function generating a tuple result
+  }
+
+  auto dt = dynamic_cast<TypeDomained *>(t);
   assert(dt);
 
   return dt->getReturnType();
@@ -1555,7 +1597,7 @@ void NodeTypedLambda::assignUnresolvedTypes(Type *t) {
   type = dynamic_cast<TypeFunction *>(getType());
   assert(type);
 
-  body->assignUnresolvedTypes(t);
+  body->assignUnresolvedTypes(type->getReturnType());
 }
 
 void NodeTypedLambda::compile(Assembly &assembly) {
@@ -1564,6 +1606,7 @@ void NodeTypedLambda::compile(Assembly &assembly) {
   if(localSymbols->getHeapVariableSize()) {
     // get data area address
     code.add(pop(r8()));
+    code.add(add(-6, r8()));
   }
 
   code.add(enter(-localSymbols->getStackSize()));
