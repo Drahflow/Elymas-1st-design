@@ -9,18 +9,30 @@
 
 using namespace opcode;
 
-Type *Type::all = new (class _all: public Type {
+Type *Type::any = new (class _any: public Type {
   public:
-    bool canConvertTo(Type *t) {
-      return true;
-    }
+    unsigned int getSize() { typeResolutionIncomplete(); }
+    bool canConvertTo(Type *) { return true; }
+    void convertTo(Type *t, Assembly &assembly) { typeResolutionIncomplete(); }
+    void compile(Assembly &assembly) { typeResolutionIncomplete(); }
 
-    void convertTo(Type *t, Assembly &assembly) {
-      throw std::runtime_error("trying to convert unbound type to anything");
+  private:
+    void typeResolutionIncomplete() {
+      compileError("Type resolution incomplete: Element with every possible type remained.");
     }
+});
 
-    unsigned int getSize() { assert(false); }
-    void compile(Assembly &assembly) { assert(false); }
+Type *Type::none = new (class _none: public Type {
+  public:
+    unsigned int getSize() { typeResolutionIncomplete(); }
+    bool canConvertTo(Type *) { return false; }
+    void convertTo(Type *t, Assembly &assembly) { typeResolutionIncomplete(); }
+    void compile(Assembly &assembly) { typeResolutionIncomplete(); }
+
+  private:
+    void typeResolutionIncomplete() {
+      compileError("Type resolution incomplete: Element without type remained.");
+    }
 });
 
 Type *Type::boolean = new (class _boolean: public Type {

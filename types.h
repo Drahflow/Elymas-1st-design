@@ -27,7 +27,8 @@ class Type: public NodeExpr {
       return !(*this == other);
     }
 
-    static Type *all;
+    static Type *any;
+    static Type *none;
     static Type *sint32;
     static Type *uint64;
     static Type *boolean;
