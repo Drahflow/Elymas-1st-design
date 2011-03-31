@@ -149,69 +149,6 @@ void NodeStatementBlock::compile(Assembly &assembly) {
   }
 }
 
-void NodeExprBinary::rewriteDeclarations(SymbolTable *st, NodeExpr **) {
-  lhs->rewriteDeclarations(st, &lhs);
-  rhs->rewriteDeclarations(st, &rhs);
-}
-
-void NodeExprBinary::resolveSymbols(SymbolTable *st) {
-  lhs->resolveSymbols(st);
-  rhs->resolveSymbols(st);
-
-  syms = st;
-}
-
-void NodeExprBinary::rewriteFunctionApplications(NodeExpr **) {
-  lhs->rewriteFunctionApplications(&lhs);
-  rhs->rewriteFunctionApplications(&rhs);
-}
-
-// 1. unwrap function types while both all three sides agree, error if they don't
-// 2. a side which has no longer function type simply remains while the others are unwrapped
-// 3. convert between base types as necessary for operator
-// 4. rewrap types as indicated by earlier unwrapping
-// TODO: note this implementation is a crappy 1 level version of this
-void NodeExprBinary::assignUnresolvedTypes(Type *t) {
-  lhs->assignUnresolvedTypes(t);
-  rhs->assignUnresolvedTypes(t);
-
-  Type *lt = lhs->getType();
-  Type *rt = rhs->getType();
-
-  TypeDomained *ft = dynamic_cast<TypeDomained *>(t);
-  if(!ft) ft = dynamic_cast<TypeDomained *>(lt);
-  if(!ft) ft = dynamic_cast<TypeDomained *>(rt);
-
-  if(ft) {
-    assert(!t || *ft == *t || *(ft->getReturnType()) == *t);
-    assert(*ft == *lt || !ft->getReturnType() || *(ft->getReturnType()) == *lt);
-    assert(*ft == *rt || !ft->getReturnType() || *(ft->getReturnType()) == *rt);
-
-    type = ft;
-  } else {
-    if(t) {
-      assert(*t == *lt);
-      assert(*t == *rt);
-
-      type = t;
-    } else {
-      assert(*lt == *rt);
-
-      type = rt;
-    }
-  }
-
-  assert(type);
-}
-
-void NodeExprBinary::compile(Assembly &assembly) {
-  assert(false);
-}
-
-void NodeExprBinary::compileL(Assembly &assembly) {
-  assert(false);
-}
-
 std::string NodeExprBinary::dump(int i) {
   return indent(i) + op() + "\n"
     + lhs->dump(i + 2) + "\n"
@@ -446,14 +383,17 @@ void NodeExprTuple::rewriteFunctionApplications(NodeExpr **parent) {
 void NodeExprTuple::assignUnresolvedTypes(Type *t) {
   if(elements.size() == 1) {
     elements[0]->assignUnresolvedTypes(t);
-  } else if(auto tt = dynamic_cast<TypeTuple * >(t)) {
+  } else if(auto tt = dynamic_cast<TypeTuple *>(t)) {
     for(int i = 0; i < tt->getTupleWidth(); ++i) {
       elements[i]->assignUnresolvedTypes(tt->getElementType(i));
     }
   } else {
     for(auto i = elements.begin(); i != elements.end(); ++i) {
-      // TODO: forward element info here
-      (*i)->assignUnresolvedTypes(0);
+      (*i)->assignUnresolvedTypes(Type::any);
+    }
+
+    if(!t->canConvertTo(getType())) {
+      compileError("Type request could not be fulfilled: Not a tuple type.");
     }
   }
 }
@@ -696,14 +636,13 @@ void NodeExprArray::rewriteFunctionApplications(NodeExpr **) {
 }
 
 void NodeExprArray::assignUnresolvedTypes(Type *t) {
-  Type *elementType = 0;
+  Type *elementType = Type::any;
 
   if(auto at = dynamic_cast<TypeLoopable *>(t)) {
     elementType = at->getReturnType();
   }
 
   for(auto i = elements.begin(); i != elements.end(); ++i) {
-    // TODO: forward element info here
     (*i)->assignUnresolvedTypes(elementType);
   }
 }
@@ -743,7 +682,7 @@ void NodeExprArray::compileL(Assembly &assembly) {
 }
 
 Type *NodeExprArray::getType() {
-  Type *inner = Type::all;
+  Type *inner = Type::any;
 
   if(elements.size()) {
     inner = elements[0]->getType();
@@ -1009,21 +948,44 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
   }
 }
 
-void NodeExprApply::assignUnresolvedTypes(Type *) {
-  argument->assignUnresolvedTypes(0);
+void NodeExprApply::assignUnresolvedTypes(Type *t) {
+  function->assignUnresolvedTypes(Type::any);
+  argument->assignUnresolvedTypes(Type::any);
 
-  TypeFunction *ft = new TypeFunction();
-  Type *at = argument->getType();
+  Type *oldFt = function->getType();
+  Type *oldAt = argument->getType();
 
-  if(auto att = dynamic_cast<TypeTuple *>(at)) {
-    for(int i = 0; i < att->getTupleWidth(); ++i) {
-      ft->addArgument(att->getElementType(i), 1);
+  do {
+    oldFt = function->getType();
+    oldAt = argument->getType();
+
+    TypeFunction *ft = new TypeFunction();
+
+    if(auto att = dynamic_cast<TypeTuple *>(oldAt)) {
+      for(int i = 0; i < att->getTupleWidth(); ++i) {
+        ft->addArgument(att->getElementType(i), 1);
+      }
+    } else {
+      ft->addArgument(oldAt, 1);
     }
-  } else {
-    ft->addArgument(at, 1);
-  }
 
-  function->assignUnresolvedTypes(ft);
+    function->assignUnresolvedTypes(ft);
+
+    TypeDomained *newFt = dynamic_cast<TypeDomained *>(function->getType());
+    assert(newFt);
+
+    if(newFt->getArgumentCount() == 1) {
+      argument->assignUnresolvedTypes(newFt->getArgumentType(0));
+    } else {
+      TypeTuple *newAt = new TypeTuple();
+
+      for(int i = 0; i < ft->getArgumentCount(); ++i) {
+        newAt->addElementType(ft->getArgumentType(i));
+      }
+
+      argument->assignUnresolvedTypes(newAt);
+    }
+  } while(*oldFt != *function->getType() || *oldAt != *argument->getType());
 }
 
 void NodeExprApply::compile(Assembly &assembly) {
@@ -1053,6 +1015,7 @@ void NodeExprApply::compile(Assembly &assembly) {
         Type *argti = argt->getElementType(i);
         // TODO: what about non-integer types?
         assembly.add(move(memory(offset, rax()), abiArgs[i]));
+        // TODO: WTF?
         argti->convertTo(ft->getArgumentType(i), assembly);
         offset += argti->getSize();
       }
@@ -1145,7 +1108,7 @@ void NodeExprProjection::assignUnresolvedTypes(Type *t) {
 
   auto tf = dynamic_cast<TypeFunction *>(t);
   if(tf) {
-    Type *argt = 0;
+    Type *argt = Type::none;
     bool posResolved = false;
 
     if(tf->getArgumentCount() <= pos) {
@@ -1168,18 +1131,32 @@ void NodeExprProjection::assignUnresolvedTypes(Type *t) {
 
       type->setReturnType(argtt->getElementType(pos));
     } else {
-      assert(posResolved);
+      TypeTuple *attempt = new TypeTuple();
+      for(int i = 0; i < pos; ++i) {
+        attempt->addElementType(Type::none);
+      }
 
-      type = (new TypeFunction())
-        ->addArgument(argt, 1)
-        ->setReturnType(argt);
+      if(argt->canConvertTo(attempt)) {
+        type = (new TypeFunction())
+          ->setReturnType(Type::any);
+
+        for(int i = 0; i < pos; ++i) {
+          type->addArgument(Type::any, 1);
+        }
+      } else {
+        assert(posResolved);
+
+        type = (new TypeFunction())
+          ->addArgument(argt, 1)
+          ->setReturnType(argt);
+      }
     }
   } else {
     type = (new TypeFunction())
       ->setReturnType(t);
 
     for(int i = 0; i < pos - 1; ++i) {
-      type->addArgument(0, 1);
+      type->addArgument(Type::any, 1);
     }
 
     type->addArgument(t, 1);
@@ -1252,13 +1229,14 @@ void NodeExprLoop::rewriteFunctionApplications(NodeExpr **parent) {
   expr->rewriteFunctionApplications(&expr);
 }
 
+// TYPE TODO: make it a real fixpoint thing
 void NodeExprLoop::assignUnresolvedTypes(Type *t) {
   if(auto lt = dynamic_cast<TypeLoopable *>(t)) {
-    container->assignUnresolvedTypes(0);
+    container->assignUnresolvedTypes(Type::any);
     expr->assignUnresolvedTypes(lt->getReturnType());
   } else {
-    container->assignUnresolvedTypes(0);
-    expr->assignUnresolvedTypes(0);
+    container->assignUnresolvedTypes(Type::any);
+    expr->assignUnresolvedTypes(Type::any);
   }
 }
 
@@ -1403,37 +1381,33 @@ std::string TreeNode::dump(int i) {
   return indent(i) + typeid(*this).name();
 }
 
+void NodeExprBinarySimple::rewriteDeclarations(SymbolTable *syms, NodeExpr **parent) {
+  *parent = new NodeExprApply(implementation(), new NodeExprTuple(lhs, rhs));
+
+  (*parent)->rewriteDeclarations(syms, parent);
+}
+
+NodeExpr *NodeExprBinarySimple::implementation() {
+  assert(false); // TODO: subclass should have done this
+}
+
 static int32_t addition_int32_t(int32_t a, int32_t b) {
   return a + b;
 }
 
-void NodeExprAdd::rewriteFunctionApplications(NodeExpr **parent) {
-  *parent = new NodeExprApply(
-      new (class _: public NodeExpr {
-        public:
-          _(): type((new TypeFunction())
-            ->setReturnType(Type::sint32)
-            ->addArgument(Type::sint32, 1)
-            ->addArgument(Type::sint32, 1)) { }
-          void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
-          void resolveSymbols(SymbolTable *) { }
-          void rewriteFunctionApplications(NodeExpr **) { }
-          void assignUnresolvedTypes(Type *) { }
-          void compile(Assembly &assembly) {
-            assembly.add(move(reinterpret_cast<uint64_t>(&addition_int32_t), rax()));
-          }
-          void compileL(Assembly &assembly) { compileError("no writing to predefined functions"); }
-          Type *getType() { return type; }
-          std::string dump(int i) { return indent(i) + "α + β"; }
-
-        private:
-          Type *type;
-      }) (),
-      new NodeExprTuple(lhs, rhs));
-  
-  (*parent)->resolveSymbols(syms);
-  (*parent)->assignUnresolvedTypes(getType());
-  (*parent)->rewriteFunctionApplications(parent);
+NodeExpr *NodeExprAdd::implementation() {
+  return 
+    new (class _: public NodeExprConstantFunction {
+      public:
+        _(): NodeExprConstantFunction((new TypeFunction())
+          ->setReturnType(Type::sint32)
+          ->addArgument(Type::sint32, 1)
+          ->addArgument(Type::sint32, 1)) { }
+        void compile(Assembly &assembly) {
+          assembly.add(move(reinterpret_cast<uint64_t>(&addition_int32_t), rax()));
+        }
+        std::string dump(int i) { return indent(i) + "α + β"; }
+    }) ();
 }
 
 void NodeExprDeclaration::rewriteDeclarations(SymbolTable *st, NodeExpr **) {
@@ -1466,6 +1440,19 @@ std::string NodeExprDeclaration::dump(int i) {
   return indent(i) + "ExprDeclaration\n" + type->dump(i + 2) + "\n" + name->dump(i + 2);
 }
 
+void NodeExprAssign::resolveSymbols(SymbolTable *st) {
+  lhs->resolveSymbols(st);
+  rhs->resolveSymbols(st);
+}
+
+void NodeExprAssign::rewriteDeclarations(SymbolTable *st, NodeExpr **) {
+  lhs->rewriteDeclarations(st, &lhs);
+  rhs->rewriteDeclarations(st, &rhs);
+
+  syms = st;
+}
+
+// TYPE TODO
 void NodeExprAssign::assignUnresolvedTypes(Type *t) {
   // TODO: fix if one side is function
   lhs->assignUnresolvedTypes(t);

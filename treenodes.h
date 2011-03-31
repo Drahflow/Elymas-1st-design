@@ -389,10 +389,30 @@ class NodeExprUnary: public NodeExpr {
 
 class NodeExprBinary: public NodeExpr {
   public:
-    NodeExprBinary(NodeExpr *lhs, NodeExpr *rhs): lhs(lhs), rhs(rhs), syms(0), type(0) {
+    NodeExprBinary(NodeExpr *lhs, NodeExpr *rhs): lhs(lhs), rhs(rhs) {
       assert(lhs);
       assert(rhs);
     }
+
+    void resolveSymbols(SymbolTable *) { assert(false); }
+    void rewriteFunctionApplications(NodeExpr **) { assert(false); }
+    void assignUnresolvedTypes(Type *) { assert(false); }
+    void compile(Assembly &) { assert(false); }
+    void compileL(Assembly &) { assert(false); }
+    Type *getType() { assert(false); }
+    std::string dump(int);
+    
+  protected:
+    NodeExpr *lhs;
+    NodeExpr *rhs;
+
+    virtual std::string op() = 0;
+};
+
+class NodeExprAssign: public NodeExprBinary {
+  public:
+    NodeExprAssign(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs), type(0), syms(0) { }
+    std::string op() { return "="; }
 
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
@@ -400,69 +420,77 @@ class NodeExprBinary: public NodeExpr {
     void assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
-    Type *getType() { return type; }
-    std::string dump(int);
-    
-  protected:
-    NodeExpr *lhs;
-    NodeExpr *rhs;
 
-    SymbolTable *syms;
+  private:
     Type *type;
-
-    virtual std::string op() = 0;
+    SymbolTable *syms;
 };
 
-class NodeExprAssign: public NodeExprBinary {
+class NodeExprBinarySimple: public NodeExprBinary {
   public:
-    NodeExprAssign(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
-    std::string op() { return "="; }
+    NodeExprBinarySimple(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
 
-    void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
-    void compile(Assembly &);
-    void compileL(Assembly &);
+    void rewriteDeclarations(SymbolTable *, NodeExpr **);
+
+  protected:
+    virtual NodeExpr *implementation();
+
+    class NodeExprConstantFunction: public NodeExpr {
+      public:
+        NodeExprConstantFunction(Type *type): type(type) { }
+
+        void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
+        void resolveSymbols(SymbolTable *) { }
+        void rewriteFunctionApplications(NodeExpr **) { }
+        void assignUnresolvedTypes(Type *) { }
+        void compileL(Assembly &) { compileError("no writing to predefined functions"); }
+        Type *getType() { return type; }
+        std::string dump(int i) { return indent(i) + "constant function"; }
+
+      private:
+        Type *type;
+    };
 };
 
-class NodeExprLogicalAnd: public NodeExprBinary {
+class NodeExprLogicalAnd: public NodeExprBinarySimple {
   public:
-    NodeExprLogicalAnd(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprLogicalAnd(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "&&"; }
 };
 
-class NodeExprLogicalOr: public NodeExprBinary {
+class NodeExprLogicalOr: public NodeExprBinarySimple {
   public:
-    NodeExprLogicalOr(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprLogicalOr(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "||"; }
 };
 
-class NodeExprLogicalXor: public NodeExprBinary {
+class NodeExprLogicalXor: public NodeExprBinarySimple {
   public:
-    NodeExprLogicalXor(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprLogicalXor(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "^^"; }
 };
 
-class NodeExprBitwiseAnd: public NodeExprBinary {
+class NodeExprBitwiseAnd: public NodeExprBinarySimple {
   public:
-    NodeExprBitwiseAnd(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprBitwiseAnd(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "&"; }
 };
 
-class NodeExprBitwiseOr: public NodeExprBinary {
+class NodeExprBitwiseOr: public NodeExprBinarySimple {
   public:
-    NodeExprBitwiseOr(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprBitwiseOr(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "|"; }
 };
 
-class NodeExprBitwiseXor: public NodeExprBinary {
+class NodeExprBitwiseXor: public NodeExprBinarySimple {
   public:
-    NodeExprBitwiseXor(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprBitwiseXor(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "^"; }
 };
 
-class NodeExprEqual: public NodeExprBinary {
+class NodeExprEqual: public NodeExprBinarySimple {
   public:
-    NodeExprEqual(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprEqual(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "=="; }
 };
 
@@ -480,59 +508,59 @@ class NodeExprUnaryMinus: public NodeExprUnary {
     virtual void compile(Assembly &);
 };
 
-class NodeExprLessThan: public NodeExprBinary {
+class NodeExprLessThan: public NodeExprBinarySimple {
   public:
-    NodeExprLessThan(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprLessThan(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "<"; }
 };
 
-class NodeExprLessThanEqual: public NodeExprBinary {
+class NodeExprLessThanEqual: public NodeExprBinarySimple {
   public:
-    NodeExprLessThanEqual(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprLessThanEqual(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "<="; }
 };
 
-class NodeExprShiftLeft: public NodeExprBinary {
+class NodeExprShiftLeft: public NodeExprBinarySimple {
   public:
-    NodeExprShiftLeft(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprShiftLeft(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "<<"; }
 };
 
-class NodeExprShiftRight: public NodeExprBinary {
+class NodeExprShiftRight: public NodeExprBinarySimple {
   public:
-    NodeExprShiftRight(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprShiftRight(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return ">>"; }
 };
 
-class NodeExprAdd: public NodeExprBinary {
+class NodeExprAdd: public NodeExprBinarySimple {
   public:
-    NodeExprAdd(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprAdd(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "+"; }
 
-    void rewriteFunctionApplications(NodeExpr **);
+    NodeExpr *implementation();
 };
 
-class NodeExprSub: public NodeExprBinary {
+class NodeExprSub: public NodeExprBinarySimple {
   public:
-    NodeExprSub(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprSub(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "-"; }
 };
 
-class NodeExprMul: public NodeExprBinary {
+class NodeExprMul: public NodeExprBinarySimple {
   public:
-    NodeExprMul(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprMul(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "*"; }
 };
 
-class NodeExprDiv: public NodeExprBinary {
+class NodeExprDiv: public NodeExprBinarySimple {
   public:
-    NodeExprDiv(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprDiv(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "/"; }
 };
 
-class NodeExprMod: public NodeExprBinary {
+class NodeExprMod: public NodeExprBinarySimple {
   public:
-    NodeExprMod(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinary(lhs, rhs) { }
+    NodeExprMod(NodeExpr *lhs, NodeExpr *rhs): NodeExprBinarySimple(lhs, rhs) { }
     std::string op() { return "%"; }
 };
 
