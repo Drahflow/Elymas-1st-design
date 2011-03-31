@@ -161,7 +161,7 @@ class NodeExprTuple: public NodeExpr {
   private:
     std::vector<NodeExpr *> elements;
 
-    TypeTuple *type;
+    Type *type;
 };
 
 class NodeExprArray: public NodeExpr {
