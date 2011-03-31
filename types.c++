@@ -84,18 +84,20 @@ Type *Type::uint64 = new (class _uint64: public Type {
 
 bool TypeFunction::canConvertTo(Type *super) {
   // TODO: allow meaningful conversions
-  return false;
+  return *this == *super;
 }
 
 bool TypeFunction::operator == (Type &other) {
   TypeFunction *func = dynamic_cast<TypeFunction *>(&other);
   if(!func) return false;
 
-  if(*returnType != *func->returnType) return false;
+  if(!!returnType != !!func->returnType) return false;
+  if(returnType && func->returnType && *returnType != *func->returnType) return false;
   if(argumentTypes.size() != func->argumentTypes.size()) return false;
 
   for(int i = 0; i < argumentTypes.size(); ++i) {
-    if(*argumentTypes[i] != *func->argumentTypes[i]) return false;
+    if(!!argumentTypes[i] != !!func->argumentTypes[i]) return false;
+    if(argumentTypes[i] && func->argumentTypes[i] && *argumentTypes[i] != *func->argumentTypes[i]) return false;
     if(argumentRanks[i] != func->argumentRanks[i]) return false;
   }
 
@@ -110,7 +112,7 @@ Type *TypeFunction::generate(Type *ret) {
 std::string TypeFunction::dump(int i) {
   std::ostringstream ret;
   ret << indent(i) << "TypeFunction\n"
-    << indent(i + 2) << "Ret: " << returnType->dump(i) << "\n"
+    << indent(i + 2) << "Ret: " << (returnType? returnType->dump(i): "0x0") << "\n"
     << indent(i + 2) << "Args: " << argumentTypes.size();
 
   for(int j = 0; j < argumentTypes.size(); ++j) {
@@ -154,7 +156,7 @@ unsigned int TypeTuple::getSize() {
 }
 
 unsigned int TypeTuple::getHeapSize() {
-  unsigned int ret;
+  unsigned int ret = 0;
 
   for(auto i = elementTypes.begin(); i != elementTypes.end(); ++i) {
     ret += (*i)->getSize();
