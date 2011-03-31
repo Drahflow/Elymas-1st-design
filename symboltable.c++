@@ -107,7 +107,7 @@ void SymbolTableClosure::setHeapOffsets() {
 
   for(auto i = symbols.begin(); i != symbols.end(); ++i) {
     // this number is the offset of the data fields from after the
-    // lea instruction initializing r8
+    // call instruction preparing r8 + the jump target for said call instruction
     if(!heapOffset) heapOffset = 16;
 
     if(SymbolClosureVariable *var = dynamic_cast<SymbolClosureVariable *>(i->second)) {
