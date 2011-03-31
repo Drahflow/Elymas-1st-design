@@ -130,46 +130,24 @@ Parser<char, TreeNode *> *Grammar::generateParser() {
 
   trivialRule("_expr", "_expr_assign");
 
-  trivialRule("_expr_assign", "_expr_apply");
+  trivialRule("_expr_assign", "_expr_lambda");
   binaryExprRule<NodeExprAssign>("_expr_assign",
-      "_expr_apply", "=", "_expr_assign");
+      "_expr_lambda", "=", "_expr_assign");
 
   // ?: goes in between here
 
-  trivialRule("_expr_apply", "_expr_lambda");
-  createRule("_expr_apply",
-      resolveRule("_expr_lambda"),
-      mandatory_whitespace,
-      resolveRule("_expr_apply"),
-    [](TreeNode *func, TreeNode *, TreeNode *args) -> TreeNode * {
-      return new NodeExprApply(
-        dynamic_cast<NodeExpr *>(func),
-        dynamic_cast<NodeExpr *>(args));
-    });
-
-  trivialRule("_expr_lambda", "_expr_func_type");
+  trivialRule("_expr_lambda", "_expr_logical_or");
   createRule("_expr_lambda", {
       generateEqTs("λ"),
       resolveRule("_expr_tuple"),
       generateEqTs("→"),
-      resolveRule("_expr_atom"),
+      resolveRule("_expr_func_type"),
       resolveRule("_statement")
     }, [](const std::vector<TreeNode *> &v) -> TreeNode * {
       return new NodeTypedLambda(
         dynamic_cast<NodeExprTuple *>(v[1]),
         dynamic_cast<NodeExpr *>(v[3]),
         dynamic_cast<NodeStatement *>(v[4]));
-    });
-
-  trivialRule("_expr_func_type", "_expr_logical_or");
-  createRule("_expr_func_type",
-      resolveRule("_expr_logical_or"),
-      generateEqTs("→"),
-      resolveRule("_expr_func_type"),
-    [](TreeNode *lhs, TreeNode *, TreeNode *rhs) -> TreeNode * {
-      return new NodeTypeFunction(
-        dynamic_cast<NodeExpr *>(lhs),
-        dynamic_cast<NodeExpr *>(rhs));
     });
 
   trivialRule("_expr_logical_or", "_expr_logical_xor");
@@ -253,10 +231,32 @@ Parser<char, TreeNode *> *Grammar::generateParser() {
   binaryExprRule<NodeExprMod>("_expr_mul",
       "_expr_unary_minus", "%", "_expr_mul");
 
-  trivialRule("_expr_unary_minus", "_expr_atom");
+  trivialRule("_expr_unary_minus", "_expr_apply");
   unaryExprRule<NodeExprUnaryMinus>("_expr_unary_minus",
-      "-", "_expr_atom");
+      "-", "_expr_apply");
  
+  trivialRule("_expr_apply", "_expr_func_type");
+  createRule("_expr_apply",
+      resolveRule("_expr_func_type"),
+      mandatory_whitespace,
+      resolveRule("_expr_apply"),
+    [](TreeNode *func, TreeNode *, TreeNode *args) -> TreeNode * {
+      return new NodeExprApply(
+        dynamic_cast<NodeExpr *>(func),
+        dynamic_cast<NodeExpr *>(args));
+    });
+
+  trivialRule("_expr_func_type", "_expr_atom");
+  createRule("_expr_func_type",
+      resolveRule("_expr_atom"),
+      generateEqTs("→"),
+      resolveRule("_expr_func_type"),
+    [](TreeNode *lhs, TreeNode *, TreeNode *rhs) -> TreeNode * {
+      return new NodeTypeFunction(
+        dynamic_cast<NodeExpr *>(lhs),
+        dynamic_cast<NodeExpr *>(rhs));
+    });
+
   createRule("_expr_list",
       resolveRule("_expr"),
     [](TreeNode *expr) -> TreeNode * {
