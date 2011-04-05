@@ -1,0 +1,6 @@
+*.o
+*.gcda
+*.gcno
+*.swp
+gmon.out
+elymas
