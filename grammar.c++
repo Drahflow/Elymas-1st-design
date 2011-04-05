@@ -18,7 +18,7 @@ Parser<char, char> *eqt(const unsigned char c) {
 Parser<char, TreeNode *> *Grammar::generateEqTs(const std::string &s) {
   return reduction(
       new EqTs<char>(s),
-      [](const int &i) -> TreeNode * {
+      [](const int &) -> TreeNode * {
         return 0;
       });
 }
@@ -26,7 +26,7 @@ Parser<char, TreeNode *> *Grammar::generateEqTs(const std::string &s) {
 Grammar::Grammar() {
   mandatory_whitespace =
     reduction(new AnyEqT<char>({ ' ', '\t', '\n' }),
-      [](const char &v) -> TreeNode * {
+      [](const char &) -> TreeNode * {
         return 0;
       });
 
@@ -387,7 +387,7 @@ void Grammar::generateParserLambdas() {
     int j = 0;
     for(auto i = greek.begin(); i != greek.end(); ++i, ++j) {
       auto f =
-        [=](const std::vector<TreeNode *> &v) -> TreeNode * {
+        [=](const std::vector<TreeNode *> &) -> TreeNode * {
           return new NodeExprProjection(j, l);
         };
 

@@ -36,7 +36,6 @@ int testParser(void) {
   std::string input = "xxxxxxxxxxxxxxxx";
   auto s = Stream_fromIterator(input.begin(), input.end());
 
-  Parser<char, char> *S = new EqT<char> ('s');
   Parser<char, char> *X = new EqT<char> ('x');
   
   Parser<char, std::vector<char> > *XL = 

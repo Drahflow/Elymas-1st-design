@@ -1,6 +1,8 @@
 #ifndef TREENODES_H
 #define TREENODES_H
 
+#include "noreturn.h"
+
 #include <string>
 #include <algorithm>
 #include <typeinfo>
@@ -26,7 +28,7 @@ class TreeNode {
     static unsigned long creations;
 
   protected:
-    void compileError(const std::string &);
+    void NORET compileError(const std::string &);
 
     std::string indent(int indent);
 };
@@ -364,8 +366,8 @@ class NodeExprProjection: public NodeExprFunction {
     Type *getType();
 
   private:
-    int pos;
-    int level;
+    size_t pos;
+    size_t level;
 
     TypeFunction *type;
 };

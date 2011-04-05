@@ -50,7 +50,7 @@ namespace opcode {
       (rm->number % 8) * 0x01;
   }
 
-  int addrsize(int regnum, const Memory &mem) {
+  int addrsize(int /* regnum */, const Memory &mem) {
     if(mem.ripRelative) {
       if(mem.index) {
         assert(false);

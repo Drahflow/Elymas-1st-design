@@ -167,7 +167,7 @@ void Library::dumpMemory() {
   }
 }
 
-void Library::deleteObject(void *obj) {
+void Library::deleteObject(void *) {
   // zero sized objects are lying, remember that
   assert(false);
 }

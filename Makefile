@@ -1,4 +1,4 @@
-CXXOPT1=-ggdb
+CXXOPT1=-ggdb -W -Wall -Wextra -Werror
 CXXOPT2=-pg -fprofile-arcs -ftest-coverage
 # CXXOPT3=-O4
 CXXOPT=$(CXXOPT1) $(CXXOPT2) $(CXXOPT3)

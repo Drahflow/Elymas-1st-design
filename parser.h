@@ -376,7 +376,7 @@ template<class A> class Parser<char, A> {
     }
 
   public:
-    virtual void updateChildBasedAttributes(ChangeCell &change) { }
+    virtual void updateChildBasedAttributes(ChangeCell &) { }
 
   protected:
     virtual Parser<char, A> *internalDerive(char t) = 0;
@@ -627,11 +627,11 @@ template<class T, class A> class Emp: public Parser<T, A> {
     Emp(): Parser<T, A>(true, false) { }
 
   protected:
-    Parser<T, A> *internalDerive(T t) {
+    Parser<T, A> *internalDerive(T) {
       return this;
     }
 
-    Stream<std::pair<A, Stream<T> *> > *parse(Stream<T> *input) {
+    Stream<std::pair<A, Stream<T> *> > *parse(Stream<T> *) {
       return Stream_empty();
     }
 };
@@ -644,7 +644,7 @@ template<class T, class A> class Eps: public Parser<T, A> {
     Eps(Stream<A> *generator): Parser<T, A>(false, true), generator(generator) { }
 
   protected:
-    Parser<T, A> *internalDerive(T t) {
+    Parser<T, A> *internalDerive(T) {
       static Emp<T, A> fail;
       return &fail;
     }

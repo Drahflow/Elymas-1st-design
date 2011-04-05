@@ -2,6 +2,7 @@
 
 #include "assembly.h"
 #include "opcodes.h"
+#include "noreturn.h"
 
 #include <stdexcept>
 #include <sstream>
@@ -13,11 +14,11 @@ Type *Type::any = new (class _any: public Type {
   public:
     unsigned int getSize() { typeResolutionIncomplete(); }
     bool canConvertTo(Type *) { return true; }
-    void convertTo(Type *t, Assembly &assembly) { typeResolutionIncomplete(); }
-    void compile(Assembly &assembly) { typeResolutionIncomplete(); }
+    void convertTo(Type *, Assembly &) { typeResolutionIncomplete(); }
+    void compile(Assembly &) { typeResolutionIncomplete(); }
 
   private:
-    void typeResolutionIncomplete() {
+    void NORET typeResolutionIncomplete() {
       compileError("Type resolution incomplete: Element with every possible type remained.");
     }
 });
@@ -26,11 +27,11 @@ Type *Type::none = new (class _none: public Type {
   public:
     unsigned int getSize() { typeResolutionIncomplete(); }
     bool canConvertTo(Type *) { return false; }
-    void convertTo(Type *t, Assembly &assembly) { typeResolutionIncomplete(); }
-    void compile(Assembly &assembly) { typeResolutionIncomplete(); }
+    void convertTo(Type *, Assembly &) { typeResolutionIncomplete(); }
+    void compile(Assembly &) { typeResolutionIncomplete(); }
 
   private:
-    void typeResolutionIncomplete() {
+    void NORET typeResolutionIncomplete() {
       compileError("Type resolution incomplete: Element without type remained.");
     }
 });
@@ -42,7 +43,7 @@ Type *Type::boolean = new (class _boolean: public Type {
       return t == this;
     }
 
-    void convertTo(Type *t, Assembly &assembly) {
+    void convertTo(Type *t, Assembly &) {
       // TODO: allow meaningful conversions
       assert(t == this);
     }
@@ -62,7 +63,7 @@ Type *Type::sint32 = new (class _sint32: public Type {
       return t == this;
     }
 
-    void convertTo(Type *t, Assembly &assembly) {
+    void convertTo(Type *t, Assembly &) {
       // TODO: allow meaningful conversions
       assert(t == this);
     }
@@ -82,7 +83,7 @@ Type *Type::uint64 = new (class _uint64: public Type {
       return t == this;
     }
 
-    void convertTo(Type *t, Assembly &assembly) {
+    void convertTo(Type *t, Assembly &) {
       // TODO: allow meaningful conversions
       assert(t == this);
     }
@@ -107,7 +108,7 @@ bool TypeFunction::operator == (Type &other) {
   if(returnType && func->returnType && *returnType != *func->returnType) return false;
   if(argumentTypes.size() != func->argumentTypes.size()) return false;
 
-  for(int i = 0; i < argumentTypes.size(); ++i) {
+  for(size_t i = 0; i < argumentTypes.size(); ++i) {
     if(!!argumentTypes[i] != !!func->argumentTypes[i]) return false;
     if(argumentTypes[i] && func->argumentTypes[i] && *argumentTypes[i] != *func->argumentTypes[i]) return false;
     if(argumentRanks[i] != func->argumentRanks[i]) return false;
@@ -116,7 +117,7 @@ bool TypeFunction::operator == (Type &other) {
   return true;
 }
 
-Type *TypeFunction::generate(Type *ret) {
+Type *TypeFunction::generate(Type *) {
   // TODO generate clone with fixed return type
   assert(false);
 }
@@ -127,7 +128,7 @@ std::string TypeFunction::dump(int i) {
     << indent(i + 2) << "Ret: " << (returnType? returnType->dump(i): "0x0") << "\n"
     << indent(i + 2) << "Args: " << argumentTypes.size();
 
-  for(int j = 0; j < argumentTypes.size(); ++j) {
+  for(size_t j = 0; j < argumentTypes.size(); ++j) {
     ret << "\n" << indent(i + 2) << "Rank: " << argumentRanks[j] << "\n"
       << (argumentTypes[j]? argumentTypes[j]->dump(i + 2): "0x0");
   }
@@ -140,7 +141,7 @@ bool TypeTuple::operator == (Type &other) {
   if(!tuple) return false;
   if(getTupleWidth() != tuple->getTupleWidth()) return false;
 
-  for(int i = 0; i < getTupleWidth(); ++i) {
+  for(size_t i = 0; i < getTupleWidth(); ++i) {
     if(*getElementType(i) != *tuple->getElementType(i)) return false;
   }
 
@@ -180,7 +181,7 @@ unsigned int TypeTuple::getHeapSize() {
 unsigned int TypeTuple::getElementOffset(unsigned int i) {
   unsigned int ret;
 
-  for(int j = 0; j < i; ++j) {
+  for(size_t j = 0; j < i; ++j) {
     ret += elementTypes[j]->getSize();
   }
 
@@ -192,7 +193,7 @@ bool TypeTuple::canConvertTo(Type *other) {
   return *this == *other;
 }
 
-void TypeTuple::compile(Assembly &assembly) {
+void TypeTuple::compile(Assembly &) {
   // TODO: initialize tuples
   assert(false);
 }
@@ -200,7 +201,7 @@ void TypeTuple::compile(Assembly &assembly) {
 bool TypeDomained::canTakeDomainFrom(TypeDomained *other) {
   if(getArgumentCount() > other->getArgumentCount()) return false;
 
-  for(int i = 0; i < getArgumentCount(); ++i) {
+  for(size_t i = 0; i < getArgumentCount(); ++i) {
     if(!other->getArgumentType(i)->canConvertTo(getArgumentType(i))) return false;
   }
 
