@@ -735,6 +735,158 @@ static std::string createUniqueIdentifier() {
   return str.str();
 }
 
+void NodeExprApply::abstractTypeDomainedFull(NodeExpr **parent, TypeDomained *td) {
+  auto argName = createUniqueIdentifier();
+  auto keyName = createUniqueIdentifier();
+
+  if(auto tdl = dynamic_cast<TypeLoopable *>(td)) {
+    *parent = new NodeExprLoop(argument, argName, keyName,
+        new NodeExprApply(function, new NodeExprApply(new NodeIdentifier(argName), new NodeIdentifier(keyName))));
+  } else if(auto tdf = dynamic_cast<TypeFunction *>(td)) {
+    NodeExprList *replacementArguments = new NodeExprList();
+    NodeExprList *replacementCall = new NodeExprList();
+
+    for(int i = 0; i < tdf->getArgumentCount(); ++i) {
+      auto id = createUniqueIdentifier();
+
+      replacementArguments->add(new NodeExprDeclaration(tdf->getArgumentType(i), new NodeIdentifier(id)));
+      replacementCall->add(new NodeIdentifier(id));
+    }
+
+    auto ft = dynamic_cast<TypeFunction *>(function->getType());
+    assert(ft);
+
+    *parent = new NodeTypedLambda(new NodeExprTuple(replacementArguments), ft->getReturnType(),
+        new NodeStatementExpr(new NodeExprApply(function, new NodeExprApply(argument, new NodeExprTuple(replacementCall)))));
+  }
+
+  assert(syms);
+  (*parent)->rewriteDeclarations(syms, parent);
+  (*parent)->resolveSymbols(syms);
+  (*parent)->assignUnresolvedTypes(getType());
+  (*parent)->rewriteFunctionApplications(parent);
+}
+
+void NodeExprApply::abstractTypeDomainedPositioned(NodeExpr **parent, const std::vector<int> &positions) {
+  auto *ft = dynamic_cast<TypeFunction *>(function->getType());
+  assert(ft);
+
+  int primary = positions.front();
+
+  Type *at = argument->getType();
+  if(auto att = dynamic_cast<TypeTuple *>(at)) {
+    at = att->getElementType(primary);
+  } else {
+    assert(primary == 0);
+  }
+
+  auto primaryType = dynamic_cast<TypeDomained *>(at);
+  assert(primaryType);
+
+  if(auto prf = dynamic_cast<TypeFunction *>(primaryType)) {
+    NodeExprList *replacementArguments = new NodeExprList();
+    NodeExprList *replacementCall = new NodeExprList();
+
+    std::vector<std::string> argNames;
+    for(int i = 0; i < prf->getArgumentCount(); ++i) {
+      auto id = createUniqueIdentifier();
+      argNames.push_back(id);
+
+      replacementArguments->add(new NodeExprDeclaration(prf->getArgumentType(i), new NodeIdentifier(id)));
+    }
+
+    for(int i = 0; i < ft->getArgumentCount(); ++i) {
+      if(std::find(positions.begin(), positions.end(), i) == positions.end()) {
+        replacementCall->add(new NodeIdentifier(argNames[i]));
+      } else {
+        NodeExpr *fun = argument;
+        if(auto *funt = dynamic_cast<NodeExprTuple *>(fun)) {
+          fun = funt->getElements()[i];
+        }
+
+        // TODO: think about more magical domain mappings
+        NodeExprList *innerArgs = new NodeExprList();
+        for(auto j = argNames.begin(); j != argNames.end(); ++j) {
+          innerArgs->add(new NodeIdentifier(*j));
+        }
+
+        replacementCall->add(new NodeExprApply(fun, new NodeExprTuple(innerArgs)));
+      }
+    }
+
+    *parent = new NodeTypedLambda(new NodeExprTuple(replacementArguments), ft->getReturnType(),
+        new NodeStatementExpr(new NodeExprApply(function, new NodeExprTuple(replacementCall))));
+  } else if(auto *prl = dynamic_cast<TypeLoopable *>(primaryType)) {
+    auto argName = createUniqueIdentifier();
+    auto keyName = createUniqueIdentifier();
+
+    NodeExprList *replacementCall = new NodeExprList();
+
+    if(dynamic_cast<TypeTuple *>(argument->getType())) {
+      for(int i = 0; i < ft->getArgumentCount(); ++i) {
+        if(std::find(positions.begin(), positions.end(), i) == positions.end()) {
+          replacementCall->add(new NodeExprApply(new NodeExprProjection(i, 0), new NodeIdentifier(argName)));
+        } else {
+          replacementCall->add(new NodeExprApply(
+                new NodeExprApply(new NodeExprProjection(i, 0), new NodeIdentifier(argName)),
+                new NodeIdentifier(keyName)));
+        }
+      }
+    } else {
+      assert(ft->getArgumentCount() == 1);
+
+      replacementCall->add(new NodeExprApply(
+            new NodeIdentifier(argName),
+            new NodeIdentifier(keyName)));
+    }
+
+    *parent = new NodeExprLoop(argument, argName, keyName,
+        new NodeExprApply(function, new NodeExprTuple(replacementCall)));
+
+  } else {
+    compileError("overload resolution fucked up, "
+        "autolooping is deeply sorry (4): " + function->dump(0));
+  }
+
+  assert(syms);
+  (*parent)->rewriteDeclarations(syms, parent);
+  (*parent)->resolveSymbols(syms);
+  (*parent)->assignUnresolvedTypes(getType());
+  (*parent)->rewriteFunctionApplications(parent);
+}
+
+static bool needsAbstraction(Type *wanted, Type *given, int rank) {
+  assert(rank == -1 || rank > 0);
+  bool needs;
+
+  if(rank == -1) {
+    needs = !given->canConvertTo(wanted);
+  } else if(!given->canConvertTo(wanted)) {
+    needs = true;
+  } else {
+    int count;
+
+    for(count = 0; count <= rank; ) {
+      count += given->canConvertTo(wanted);
+
+      auto givenTd = dynamic_cast<TypeDomained *>(given);
+      if(!givenTd) break;
+
+      given = givenTd->getReturnType();
+    }
+    
+    assert(count >= rank); // sufficient type depth
+
+    needs = count > rank;
+  }
+  
+  if(needs) {
+    assert(dynamic_cast<TypeDomained *>(given));
+  }
+
+  return needs;
+}
+
 // 1. from top to bottom search for tuples of right count
 //    one-tuples and scalars are skipped (unless function has 1 argument)
 //    lists are looped (but if 1 argument function, top level tuple matches)
@@ -753,8 +905,8 @@ static std::string createUniqueIdentifier() {
 //    3d. all arguments looped have their topmost type removed accordingly
 // 4. (repeatedly) invoke the function until all elements have
 //    been processed
-// FIXME: REWRITE THIS WHOLE FUNCTION
 void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
+  function->rewriteFunctionApplications(&function);
   argument->rewriteFunctionApplications(&argument);
 
   if(auto tt = dynamic_cast<TypeTuple *>(function->getType())) {
@@ -772,16 +924,8 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
       if(auto *att = dynamic_cast<TypeTuple *>(at)) {
         if(att->getTupleWidth() != 1) break;
         at = att->getElementType(0);
-      } else if(auto *atl = dynamic_cast<TypeLoopable *>(at)) {
-        auto argName = createUniqueIdentifier();
-        auto keyName = createUniqueIdentifier();
-
-        *parent = new NodeExprLoop(argument, argName, keyName,
-            new NodeExprApply(function, new NodeExprApply(new NodeIdentifier(argName), new NodeIdentifier(keyName))));
-        (*parent)->rewriteDeclarations(syms, parent);
-        (*parent)->resolveSymbols(syms);
-        (*parent)->assignUnresolvedTypes(getType());
-        (*parent)->rewriteFunctionApplications(parent);
+      } else if(auto *atd = dynamic_cast<TypeDomained *>(at)) {
+        abstractTypeDomainedFull(parent, atd);
         return;
       } else {
         compileError("overload resolution fucked up, "
@@ -795,137 +939,39 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
       compileError("overload resolution fucked up, "
           "autolooping is deeply sorry (2a): " + function->dump(0));
     }
-  } else {
-    if(ft->getArgumentCount() > 1) {
-      compileError("overload resolution fucked up, "
-          "autolooping is deeply sorry (2b): " + function->dump(0));
-    }
+  } else if(ft->getArgumentCount() > 1) {
+    compileError("overload resolution fucked up, "
+        "autolooping is deeply sorry (2b): " + function->dump(0));
   }
+
+  std::vector<int> abstractionPositions;
+  TypeDomained *abstractionPrimary = 0;
 
   for(int i = 0; i < ft->getArgumentCount(); ++i) {
     Type *fargt = ft->getArgumentType(i);
     Type *argt = at;
-    if(TypeTuple *argtt = dynamic_cast<TypeTuple *>(argt)) {
+    if(auto *argtt = dynamic_cast<TypeTuple *>(argt)) {
       argt = argtt->getElementType(i);
     }
 
     int rank = ft->getArgumentRank(i);
     assert(rank);
 
-    if(auto argft = dynamic_cast<TypeFunction *>(argt) && !dynamic_cast<TypeFunction *>(fargt)) {
-      NodeExprList *replacementArguments = new NodeExprList();
-      NodeExprList *replacementCall = new NodeExprList();
+    if(!needsAbstraction(fargt, argt, rank)) continue;
 
-      for(int j = 0; j < ft->getArgumentCount(); ++j) {
-        auto id = createUniqueIdentifier();
-
-        if(j == i) {
-          replacementArguments->add(new NodeExprDeclaration(ft->getArgumentType(i), new NodeIdentifier(id)));
-
-          NodeExpr *fun = argument;
-          if(auto *funt = dynamic_cast<NodeExprTuple *>(fun)) {
-            fun = funt->getElements()[j];
-          }
-
-          replacementCall->add(new NodeExprApply(fun, new NodeIdentifier(id)));
-        } else {
-          replacementCall->add(new NodeExprApply(new NodeExprProjection(j, 0), argument));
-        }
-      }
-
-      assert(getType());
-
-      (*parent) = new NodeTypedLambda(new NodeExprTuple(replacementArguments), getType(),
-          new NodeStatementExpr(new NodeExprApply(function, new NodeExprTuple(replacementCall))));
-
-      assert(syms);
-      (*parent)->rewriteDeclarations(syms, parent);
-      (*parent)->resolveSymbols(syms);
-      (*parent)->assignUnresolvedTypes(getType());
-      (*parent)->rewriteFunctionApplications(parent);
-      return;
+    // TODO: think about what we want to happen in the case of functions which extend other function's domains
+    if(!abstractionPrimary) {
+      abstractionPositions.push_back(i);
+      abstractionPrimary = dynamic_cast<TypeDomained *>(argt);
+      assert(abstractionPrimary);
+    } else if(dynamic_cast<TypeDomained *>(argt) && dynamic_cast<TypeDomained *>(argt)->canTakeDomainFrom(abstractionPrimary)) {
+      abstractionPositions.push_back(i);
     }
+  }
 
-    if(rank > 0) {
-      int depth = 0;
-      while(1) {
-        if(argt->canConvertTo(fargt)) {
-          ++depth;
-        }
-
-        if(TypeTuple *att = dynamic_cast<TypeTuple *>(argt)) {
-          if(att->getTupleWidth() == 1) {
-            argt = att->getElementType(0);
-          } else {
-            break;
-          }
-        } else if(auto *atd = dynamic_cast<TypeDomained *>(argt)) {
-          argt = atd->getReturnType();
-        } else {
-          break;
-        }
-      }
-
-      if(!depth) {
-        compileError("overload resolution fucked up, "
-            "autolooping is deeply sorry (3): " + function->dump(0));
-      }
-
-      rank = rank - depth - 1;
-    }
-
-    argt = at;
-    if(TypeTuple *argtt = dynamic_cast<TypeTuple *>(argt)) {
-      argt = argtt->getElementType(i);
-    }
-
-    while(1) {
-      if(argt->canConvertTo(fargt)) {
-        ++rank;
-      }
-
-      if(!rank) break;
-
-      if(TypeTuple *att = dynamic_cast<TypeTuple *>(argt)) {
-        if(att->getTupleWidth() == 1) {
-          argt = att->getElementType(0);
-        } else {
-          compileError("overload resolution fucked up, "
-              "autolooping is deeply sorry (4): " + function->dump(0));
-        }
-      } else if(TypeLoopable *atl = dynamic_cast<TypeLoopable *>(argt)) {
-        if(auto *origTuple = dynamic_cast<TypeTuple *>(at)) {
-          assert(origTuple);
-
-          TypeTuple *innerType = new TypeTuple();
-          for(int j = 0; j < origTuple->getTupleWidth(); ++j) {
-            if(i == j) {
-              innerType->addElementType(atl->getReturnType());
-            } else {
-              innerType->addElementType(origTuple->getElementType(j));
-            }
-          }
-
-          assert(false);
-        } else {
-          auto argName = createUniqueIdentifier();
-          auto keyName = createUniqueIdentifier();
-
-          *parent = new NodeExprLoop(argument, argName, keyName,
-              new NodeExprApply(function, new NodeExprApply(new NodeIdentifier(argName), new NodeIdentifier(keyName))));
-        }
-
-        (*parent)->rewriteDeclarations(syms, parent);
-        (*parent)->resolveSymbols(syms);
-        (*parent)->assignUnresolvedTypes(getType());
-        (*parent)->rewriteFunctionApplications(parent);
-        // TODO: correctly handle co-looping
-        return;
-      } else {
-        compileError("overload resolution fucked up, "
-            "autolooping is deeply sorry (4): " + function->dump(0));
-      }
-    }
+  if(!abstractionPositions.empty()) {
+    abstractTypeDomainedPositioned(parent, abstractionPositions);
+    return;
   }
 }
 
@@ -995,9 +1041,10 @@ void NodeExprApply::compile(Assembly &assembly) {
 
         Type *argti = argt->getElementType(i);
         // TODO: what about non-integer types?
+        // TODO: actually do type conversion here
+        assert(argti->canConvertTo(ft->getArgumentType(i)));
         assembly.add(move(memory(offset, rax()), abiArgs[i]));
         // TODO: WTF?
-        argti->convertTo(ft->getArgumentType(i), assembly);
         offset += argti->getSize();
       }
       function->compile(assembly);

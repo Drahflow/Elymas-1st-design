@@ -11,6 +11,7 @@ class Main;
 class Type;
 class TypeFunction;
 class TypeTuple;
+class TypeDomained;
 class SymbolTable;
 class SymbolTableClosure;
 class Symbol;
@@ -207,6 +208,9 @@ class NodeExprApply: public NodeExpr {
     NodeExpr *argument;
 
     SymbolTable *syms;
+
+    void abstractTypeDomainedFull(NodeExpr **, TypeDomained *);
+    void abstractTypeDomainedPositioned(NodeExpr **, const std::vector<int> &);
 };
 
 class NodeStatementExpr: public NodeStatement {

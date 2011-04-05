@@ -76,6 +76,8 @@ class TypeDomained: public Type {
     virtual unsigned int getArgumentCount() = 0;
     virtual int getArgumentRank(unsigned int i) = 0;
     virtual Type *getArgumentType(unsigned int i) = 0;
+
+    bool canTakeDomainFrom(TypeDomained *);
 };
 
 class TypeLoopable: public TypeDomained {

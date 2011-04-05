@@ -196,3 +196,13 @@ void TypeTuple::compile(Assembly &assembly) {
   // TODO: initialize tuples
   assert(false);
 }
+
+bool TypeDomained::canTakeDomainFrom(TypeDomained *other) {
+  if(getArgumentCount() > other->getArgumentCount()) return false;
+
+  for(int i = 0; i < getArgumentCount(); ++i) {
+    if(!other->getArgumentType(i)->canConvertTo(getArgumentType(i))) return false;
+  }
+
+  return true;
+}
