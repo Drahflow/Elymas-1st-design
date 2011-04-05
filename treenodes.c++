@@ -727,25 +727,6 @@ void NodeExprApply::resolveSymbols(SymbolTable *st) {
   syms = st;
 }
 
-class RCX: public NodeExpr {
-  public:
-    RCX(Type *type): type(type) { }
-    void rewriteDeclarations(SymbolTable *, NodeExpr **) { assert(false); }
-    void resolveSymbols(SymbolTable *) { }
-    void rewriteFunctionApplications(NodeExpr **) { }
-    void assignUnresolvedTypes(Type *t) { }
-    void compile(Assembly &assembly) {
-      assembly.add(move(rcx(), rax()));
-    }
-    void compileL(Assembly &assembly) {
-      assert(false);
-    }
-    Type *getType() { return type; }
-
-  private:
-    Type *type;
-};
-
 static std::string createUniqueIdentifier() {
   static unsigned long long id = 0;
 
@@ -1229,7 +1210,6 @@ void NodeExprLoop::rewriteFunctionApplications(NodeExpr **parent) {
   expr->rewriteFunctionApplications(&expr);
 }
 
-// TYPE TODO: make it a real fixpoint thing
 void NodeExprLoop::assignUnresolvedTypes(Type *t) {
   if(auto lt = dynamic_cast<TypeLoopable *>(t)) {
     container->assignUnresolvedTypes(Type::any);
