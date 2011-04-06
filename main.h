@@ -13,7 +13,7 @@
 
 class Main {
   public:
-    Main();
+    Main(bool debug);
     void parse(const std::string &input);
 
   private:
@@ -22,6 +22,7 @@ class Main {
 
     Grammar grammar;
     SymbolTableGlobal symbolTable;
+    bool debug;
 
     void (*compile(NodeStatement *))(Main *);
 };

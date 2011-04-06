@@ -6,7 +6,7 @@
 #include "library.h"
 #include "opcodes.h"
 
-Main::Main() {
+Main::Main(bool debug): debug(debug) {
   Library::addStandardTypes(&symbolTable);
   Library::addStandardFunctions(&symbolTable);
 }
@@ -58,8 +58,10 @@ void Main::parse(const std::string &file) {
     inStream = next->head().second;
   }
 
-  std::cout << "Nodes created: " << TreeNode::creations << std::endl;
-  std::cout << "Parsers created: " << Parser_creations << std::endl;
+  if(debug) {
+    std::cout << "Nodes created: " << TreeNode::creations << std::endl;
+    std::cout << "Parsers created: " << Parser_creations << std::endl;
+  }
 }
 
 void (*Main::compile(NodeStatement *statement))(Main *) {
@@ -71,7 +73,7 @@ void (*Main::compile(NodeStatement *statement))(Main *) {
   statement->assignUnresolvedTypes(Type::any);
   statement->rewriteFunctionApplications();
 
-  std::cout << statement->dump(0) << std::endl;
+  if(debug) std::cout << statement->dump(0) << std::endl;
 
   Assembly assembly;
   statement->compile(assembly);

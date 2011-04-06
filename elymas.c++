@@ -1,12 +1,23 @@
 #include "main.h"
 
 #include <memory>
+#include <string.h>
+
+static void help() {
+  std::cerr << "Usage: ./elymas [--debug] <input>" << std::endl;
+}
 
 int main(int argc, char **argv) {
-  if(argc != 2) {
-    std::cerr << "Usage: ./elymas <input>" << std::endl;
-  }
+  bool debug = false;
 
-  Main mainloop;
-  mainloop.parse(argv[1]);
+  int pos = 1;
+  if(argc < pos) { help(); return 1; }
+  if(!strcmp(argv[pos], "--debug")) {
+    debug = true;
+    ++pos;
+  }
+  if(argc < pos) { help(); return 1; }
+
+  Main mainloop(debug);
+  mainloop.parse(argv[pos]);
 }

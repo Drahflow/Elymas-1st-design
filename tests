@@ -1,0 +1,35 @@
+#!/bin/zsh
+
+run() {
+  echo -n "$1... "
+
+  result="$( ulimit -t 30; ulimit -v 512000; ./elymas "$1" || echo "fail much")"
+#  echo
+#  echo ">>>$result<<<"
+#  echo "vs."
+#  echo ">>>$2<<<"
+
+  if [ "$result" = "$2" ]; then
+    echo -e "\e[32mok\e[0m"
+  else
+    echo -e "\e[31mfailed\e[0m"
+  fi
+}
+
+nl="
+"
+
+run examples/empty.ey "HALLO WELT!"
+run examples/1.ey ""
+run examples/arithmetik.ey "ABC"
+run examples/variables.ey ""
+run examples/putchar.ey "HALLO WELT!"
+run examples/hallowelt.ey "HALLO WELT!"
+run examples/arrays.ey "HALLO WELT!"
+run examples/functions.ey "HALLO WELT!${nl}HALLO WELT!"
+run examples/functions2.ey "HALLO WELT!${nl}HALLO WELT!"
+run examples/functions3.ey "HALLO WELT!${nl}HALLO WELT!"
+run examples/functions4.ey "HALLO WELT!${nl}HALLO WELT!"
+run examples/closures.ey "HALLO WELT!"
+run examples/closures2.ey "HALLO WELT!"
+run examples/closures3.ey "HALLO WELT!"
