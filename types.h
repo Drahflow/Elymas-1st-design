@@ -16,7 +16,7 @@ class Type: public NodeExpr {
     virtual unsigned int getSize() = 0;
     virtual bool canConvertTo(Type *) = 0;
     virtual void convertTo(Type *other, Assembly &) {
-      assert(*this == *other);
+      assert(other == none || *this == *other);
     }
 
     virtual bool operator == (Type &other) {
@@ -33,10 +33,12 @@ class Type: public NodeExpr {
     static Type *uint64;
     static Type *boolean;
 
+    static Type *min(Type *, Type *);
+
     void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
     void resolveSymbols(SymbolTable *) { assert(false); }
     void rewriteFunctionApplications(NodeExpr **) { assert(false); }
-    void assignUnresolvedTypes(Type *) { assert(false); }
+    bool assignUnresolvedTypes(Type *) { assert(false); }
     void compile(Assembly &) = 0;
     void compileL(Assembly &) { assert(false); }
     Type *getType() { assert(false); } // TODO: add type "Type" one day
@@ -115,7 +117,7 @@ class TypeLoopable: public TypeDomained {
 
 class TypeFunction: public TypeDomained {
   public:
-    TypeFunction() { }
+    TypeFunction(): returnType(0) { }
 
     virtual unsigned int getArgumentCount() {
       return argumentTypes.size();

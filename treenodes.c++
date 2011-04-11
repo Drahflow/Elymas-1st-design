@@ -24,8 +24,8 @@ void NodeStatementExpr::rewriteFunctionApplications() {
   expr->rewriteFunctionApplications(&expr);
 }
 
-void NodeStatementExpr::assignUnresolvedTypes(Type *t) {
-  expr->assignUnresolvedTypes(t);
+bool NodeStatementExpr::assignUnresolvedTypes(Type *t) {
+  return expr->assignUnresolvedTypes(t);
 }
 
 void NodeStatementExpr::compile(Assembly &assembly) {
@@ -51,9 +51,9 @@ void NodeStatementWhile::rewriteFunctionApplications() {
   body->rewriteFunctionApplications();
 }
 
-void NodeStatementWhile::assignUnresolvedTypes(Type *t) {
+bool NodeStatementWhile::assignUnresolvedTypes(Type *t) {
   condition->assignUnresolvedTypes(Type::boolean);
-  body->assignUnresolvedTypes(t);
+  return body->assignUnresolvedTypes(t);
 }
 
 void NodeStatementWhile::compile(Assembly &) {
@@ -68,8 +68,8 @@ void NodeStatementGoto::rewriteFunctionApplications() {
   target->rewriteFunctionApplications(&target);
 }
 
-void NodeStatementGoto::assignUnresolvedTypes(Type *t) {
-  target->assignUnresolvedTypes(t);
+bool NodeStatementGoto::assignUnresolvedTypes(Type *t) {
+  return target->assignUnresolvedTypes(t);
 }
 
 void NodeStatementGoto::compile(Assembly &) {
@@ -84,8 +84,8 @@ void NodeStatementLabel::rewriteFunctionApplications() {
   // no rewriting the identifier so far
 }
 
-void NodeStatementLabel::assignUnresolvedTypes(Type *t) {
-  name->assignUnresolvedTypes(t);
+bool NodeStatementLabel::assignUnresolvedTypes(Type *t) {
+  return name->assignUnresolvedTypes(t);
 }
 
 void NodeStatementLabel::compile(Assembly &) {
@@ -106,7 +106,7 @@ void NodeStatementRule::rewriteFunctionApplications() {
   mapping->rewriteFunctionApplications();
 }
 
-void NodeStatementRule::assignUnresolvedTypes(Type *) {
+bool NodeStatementRule::assignUnresolvedTypes(Type *) {
   assert(false);
 }
 
@@ -134,10 +134,12 @@ void NodeStatementBlock::rewriteFunctionApplications() {
   }
 }
 
-void NodeStatementBlock::assignUnresolvedTypes(Type *t) {
+bool NodeStatementBlock::assignUnresolvedTypes(Type *t) {
   for(auto i = statements.begin(); i != statements.end(); ++i) {
-    (*i)->assignUnresolvedTypes(t);
+    if(!(*i)->assignUnresolvedTypes(t)) return false;
   }
+
+  return true;
 }
 
 void NodeStatementBlock::compile(Assembly &assembly) {
@@ -164,8 +166,8 @@ void NodeExprUnary::rewriteFunctionApplications(NodeExpr **) {
   arg->rewriteFunctionApplications(&arg);
 }
 
-void NodeExprUnary::assignUnresolvedTypes(Type *t) {
-  arg->assignUnresolvedTypes(t);
+bool NodeExprUnary::assignUnresolvedTypes(Type *t) {
+  return arg->assignUnresolvedTypes(t);
 }
 
 void NodeExprUnary::compile(Assembly &) {
@@ -182,6 +184,10 @@ Type *NodeExprUnary::getType() {
 
 std::string NodeExprUnary::dump(int i) {
   return indent(i) + op() + "\n" + arg->dump(i + 2);
+}
+
+bool NodeIdentifier::assignUnresolvedTypes(Type *t) {
+  return getType()->canConvertTo(t);
 }
 
 void NodeIdentifier::rewriteDeclarations(SymbolTable *st, NodeExpr **parent) {
@@ -258,6 +264,10 @@ void NodeInteger::resolveSymbols(SymbolTable *) {
   // nothing to do
 }
 
+bool NodeInteger::assignUnresolvedTypes(Type *t) {
+  return Type::sint32->canConvertTo(t);
+}
+
 void NodeInteger::compile(Assembly &assembly) {
   assembly.add(move(val, rax()));
 }
@@ -273,6 +283,10 @@ Type *NodeInteger::getType() {
 
 void NodeString::resolveSymbols(SymbolTable *) {
   // nothing to do
+}
+
+bool NodeString::assignUnresolvedTypes(Type *) {
+  assert(false);
 }
 
 void NodeString::compile(Assembly &) {
@@ -377,21 +391,21 @@ void NodeExprTuple::rewriteFunctionApplications(NodeExpr **parent) {
   }
 }
 
-void NodeExprTuple::assignUnresolvedTypes(Type *t) {
+bool NodeExprTuple::assignUnresolvedTypes(Type *t) {
   if(elements.size() == 1) {
-    elements[0]->assignUnresolvedTypes(t);
+    return elements[0]->assignUnresolvedTypes(t);
   } else if(auto tt = dynamic_cast<TypeTuple *>(t)) {
     for(size_t i = 0; i < tt->getTupleWidth(); ++i) {
-      elements[i]->assignUnresolvedTypes(tt->getElementType(i));
+      if(!elements[i]->assignUnresolvedTypes(tt->getElementType(i))) return false;
     }
+
+    return true;
   } else {
     for(auto i = elements.begin(); i != elements.end(); ++i) {
       (*i)->assignUnresolvedTypes(Type::any);
     }
 
-    if(!t->canConvertTo(getType())) {
-      compileError("Type request could not be fulfilled: Not a tuple type.");
-    }
+    return getType()->canConvertTo(t);
   }
 }
 
@@ -632,7 +646,7 @@ void NodeExprArray::rewriteFunctionApplications(NodeExpr **) {
   }
 }
 
-void NodeExprArray::assignUnresolvedTypes(Type *t) {
+bool NodeExprArray::assignUnresolvedTypes(Type *t) {
   Type *elementType = Type::any;
 
   if(auto at = dynamic_cast<TypeLoopable *>(t)) {
@@ -640,8 +654,10 @@ void NodeExprArray::assignUnresolvedTypes(Type *t) {
   }
 
   for(auto i = elements.begin(); i != elements.end(); ++i) {
-    (*i)->assignUnresolvedTypes(elementType);
+    if(!(*i)->assignUnresolvedTypes(elementType)) return false;
   }
+
+  return true;
 }
 
 void NodeExprArray::compile(Assembly &assembly) {
@@ -702,6 +718,12 @@ std::string NodeExprArray::dump(int i) {
   return ret;
 }
 
+NodeExprApply::NodeExprApply(NodeExpr *function, NodeExpr *argument)
+  : function(function), argument(argument), syms(0), type(Type::any) {
+  assert(function);
+  assert(argument);
+}
+
 void NodeExprApply::rewriteDeclarations(SymbolTable *st, NodeExpr **parent) {
   function->rewriteDeclarations(st, &function);
   if(Type *type = dynamic_cast<Type *>(function)) {
@@ -733,11 +755,14 @@ static std::string createUniqueIdentifier() {
 }
 
 void NodeExprApply::abstractTypeDomainedFull(NodeExpr **parent, TypeDomained *td) {
+  //std::cout << "Apply::abstractFull" << std::endl;
+
   auto argName = createUniqueIdentifier();
   auto keyName = createUniqueIdentifier();
 
   if(dynamic_cast<TypeLoopable *>(td)) {
-    *parent = new NodeExprLoop(argument, argName, keyName,
+    *parent = new NodeExprLoop(argument, argName,
+        new NodeIdentifier(argName), keyName,
         new NodeExprApply(function, new NodeExprApply(new NodeIdentifier(argName), new NodeIdentifier(keyName))));
   } else if(auto tdf = dynamic_cast<TypeFunction *>(td)) {
     NodeExprList *replacementArguments = new NodeExprList();
@@ -765,6 +790,11 @@ void NodeExprApply::abstractTypeDomainedFull(NodeExpr **parent, TypeDomained *td
 }
 
 void NodeExprApply::abstractTypeDomainedPositioned(NodeExpr **parent, const std::vector<int> &positions) {
+  //std::cout << "Apply::abstractPositioned" << std::endl;
+  //for(auto i = positions.begin(); i != positions.end(); ++i) {
+  //  std::cout << *i << std::endl;
+  //}
+
   auto *ft = dynamic_cast<TypeFunction *>(function->getType());
   assert(ft);
 
@@ -813,7 +843,7 @@ void NodeExprApply::abstractTypeDomainedPositioned(NodeExpr **parent, const std:
 
     *parent = new NodeTypedLambda(new NodeExprTuple(replacementArguments), ft->getReturnType(),
         new NodeStatementExpr(new NodeExprApply(function, new NodeExprTuple(replacementCall))));
-  } else if(dynamic_cast<TypeLoopable *>(primaryType)) {
+  } else if(auto ptl = dynamic_cast<TypeLoopable *>(primaryType)) {
     auto argName = createUniqueIdentifier();
     auto keyName = createUniqueIdentifier();
 
@@ -822,10 +852,12 @@ void NodeExprApply::abstractTypeDomainedPositioned(NodeExpr **parent, const std:
     if(dynamic_cast<TypeTuple *>(argument->getType())) {
       for(size_t i = 0; i < ft->getArgumentCount(); ++i) {
         if(std::find(positions.begin(), positions.end(), i) == positions.end()) {
-          replacementCall->add(new NodeExprApply(new NodeExprProjection(i, 0), new NodeIdentifier(argName)));
+          TypeFunction *pt = (new TypeFunction(*ft))->setReturnType(ft->getArgumentType(i));
+          replacementCall->add(new NodeExprApply(new NodeExprProjection(i, 0, pt), new NodeIdentifier(argName)));
         } else {
+          TypeFunction *pt = (new TypeFunction(*ft))->setReturnType(ptl->generate(ft->getArgumentType(i)));
           replacementCall->add(new NodeExprApply(
-                new NodeExprApply(new NodeExprProjection(i, 0), new NodeIdentifier(argName)),
+                new NodeExprApply(new NodeExprProjection(i, 0, pt), new NodeIdentifier(argName)),
                 new NodeIdentifier(keyName)));
         }
       }
@@ -837,13 +869,27 @@ void NodeExprApply::abstractTypeDomainedPositioned(NodeExpr **parent, const std:
             new NodeIdentifier(keyName)));
     }
 
-    *parent = new NodeExprLoop(argument, argName, keyName,
-        new NodeExprApply(function, new NodeExprTuple(replacementCall)));
+    NodeExpr *container;
+    if(auto att = dynamic_cast<TypeTuple *>(argument->getType())) {
+      if(att->getTupleWidth() > 1) {
+        TypeFunction *pt = (new TypeFunction(*ft))->setReturnType(ptl->generate(ft->getArgumentType(primary)));
+        container = new NodeExprApply(new NodeExprProjection(primary, 0, pt), argument);
+      }
+    } else {
+        container = new NodeIdentifier(argName);
+    }
 
+    *parent = new NodeExprLoop(argument, argName,
+        container, keyName,
+        new NodeExprApply(function, new NodeExprTuple(replacementCall)));
   } else {
     compileError("overload resolution fucked up, "
         "autolooping is deeply sorry (4): " + function->dump(0));
   }
+
+  //std::cout << "vvv rewriting finished vvv" << std::endl;
+  //std::cout << (*parent)->dump(0) << std::endl;
+  //std::cout << "^^^ rewriting finished ^^^" << std::endl;
 
   assert(syms);
   (*parent)->rewriteDeclarations(syms, parent);
@@ -972,15 +1018,18 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
   }
 }
 
-// TODO: this code does not correctly handle autolooping
-void NodeExprApply::assignUnresolvedTypes(Type *) {
+// TODO: maybe some linear algeabra might help with figuring the right types out
+bool NodeExprApply::assignUnresolvedTypes(Type *t) {
+  //std::cout << dump(0) << std::endl;
+  //std::cout << "analysing types..." << std::endl;
+
   function->assignUnresolvedTypes(Type::any);
   argument->assignUnresolvedTypes(Type::any);
 
-  Type *oldFt = function->getType();
-  Type *oldAt = argument->getType();
+  Type *oldFt;
+  Type *oldAt;
 
-  do {
+  for(int i = 0; i < 16; ++i) {
     oldFt = function->getType();
     oldAt = argument->getType();
 
@@ -993,6 +1042,7 @@ void NodeExprApply::assignUnresolvedTypes(Type *) {
     } else {
       ft->addArgument(oldAt, 1);
     }
+    ft->setReturnType(Type::any);
 
     function->assignUnresolvedTypes(ft);
 
@@ -1010,7 +1060,113 @@ void NodeExprApply::assignUnresolvedTypes(Type *) {
 
       argument->assignUnresolvedTypes(newAt);
     }
-  } while(*oldFt != *function->getType() || *oldAt != *argument->getType());
+
+    if(*oldFt == *function->getType() && *oldAt == *argument->getType()) break;
+  }
+
+  auto ft = dynamic_cast<TypeDomained *>(function->getType());
+  assert(ft);
+
+  if(auto tt = dynamic_cast<TypeTuple *>(function->getType())) {
+    assert(tt->getTupleWidth() != 1);
+    assert(false); // TODO: this should produce a tuple of the results
+  }
+
+  Type *at = argument->getType();
+  std::vector<TypeDomained *> unloopedDomains;
+
+  if(ft->getArgumentCount() != 1) {
+    while(1) {
+      if(auto *att = dynamic_cast<TypeTuple *>(at)) {
+        if(att->getTupleWidth() != 1) break;
+        at = att->getElementType(0);
+      } else if(auto *atd = dynamic_cast<TypeDomained *>(at)) {
+        at = atd->getReturnType();
+        unloopedDomains.push_back(atd);
+      } else {
+        compileError("overload resolution fucked up, "
+            "autolooping is deeply sorry (t1): " + function->dump(0));
+      }
+    }
+  }
+
+  if(auto att = dynamic_cast<TypeTuple *>(at)) {
+    if(att->getTupleWidth() < ft->getArgumentCount()) {
+      compileError("overload resolution fucked up, "
+          "autolooping is deeply sorry (t2a): " + function->dump(0));
+    }
+  } else if(ft->getArgumentCount() > 1) {
+    compileError("overload resolution fucked up, "
+        "autolooping is deeply sorry (t2b): " + function->dump(0));
+  }
+
+  std::vector<Type *> argts;
+  for(size_t i = 0; i < ft->getArgumentCount(); ++i) {
+      Type *argt = at;
+
+      if(auto *argtt = dynamic_cast<TypeTuple *>(argt)) {
+        argt = argtt->getElementType(i);
+      }
+
+      argts.push_back(argt);
+  }
+
+  bool any = true;
+  while(any) {
+    any = false;
+
+    std::vector<int> abstractionPositions;
+    TypeDomained *abstractionPrimary = 0;
+
+    for(size_t i = 0; i < ft->getArgumentCount(); ++i) {
+      Type *fargt = ft->getArgumentType(i);
+      Type *argt = argts[i];
+
+      int rank = ft->getArgumentRank(i);
+      assert(rank);
+
+      if(!needsAbstraction(fargt, argt, rank)) continue;
+
+      // TODO: think about what we want to happen in the case of functions which extend other function's domains
+      if(!abstractionPrimary) {
+        abstractionPositions.push_back(i);
+        abstractionPrimary = dynamic_cast<TypeDomained *>(argt);
+        assert(abstractionPrimary);
+      } else if(dynamic_cast<TypeDomained *>(argt) && dynamic_cast<TypeDomained *>(argt)->canTakeDomainFrom(abstractionPrimary)) {
+        abstractionPositions.push_back(i);
+      }
+    }
+
+    if(!abstractionPositions.empty()) {
+      unloopedDomains.push_back(abstractionPrimary);
+
+      for(auto i = abstractionPositions.begin(); i != abstractionPositions.end(); ++i) {
+        auto atd = dynamic_cast<TypeDomained *>(argts[*i]);
+        assert(atd);
+
+        argts[*i] = atd->getReturnType();
+      }
+
+      any = true;
+    }
+  }
+
+  type = ft->getReturnType();
+  //std::cout << "number of unlooped domains: " << unloopedDomains.size() << std::endl;
+
+  while(!unloopedDomains.empty()) {
+    type = unloopedDomains.back()->generate(type);
+    unloopedDomains.pop_back();
+  }
+
+  //std::cout << "determined type (function): " << std::endl;
+  //std::cout << function->getType()->dump(0) << std::endl;
+  //std::cout << "determined type (argument): " << std::endl;
+  //std::cout << argument->getType()->dump(0) << std::endl;
+  //std::cout << "determined type (application): " << std::endl;
+  //std::cout << type->dump(0) << std::endl;
+
+  return type->canConvertTo(t);
 }
 
 void NodeExprApply::compile(Assembly &assembly) {
@@ -1097,20 +1253,6 @@ void NodeExprApply::compileL(Assembly &) {
   assert(false);
 }
 
-Type *NodeExprApply::getType() {
-  Type *t = function->getType();
-
-  if(auto tt = dynamic_cast<TypeTuple *>(t)) {
-    assert(tt->getTupleWidth() != 1);
-    assert(false); // TODO: actually there should be a function generating a tuple result
-  }
-
-  auto dt = dynamic_cast<TypeDomained *>(t);
-  assert(dt);
-
-  return dt->getReturnType();
-}
-
 std::string NodeExprApply::dump(int i) {
   return indent(i) + "NodeExprApply\n"
     + function->dump(i + 2) + "\n"
@@ -1125,64 +1267,36 @@ void NodeExprProjection::rewriteFunctionApplications(NodeExpr **) {
   // nothing to do
 }
 
-void NodeExprProjection::assignUnresolvedTypes(Type *t) {
+bool NodeExprProjection::assignUnresolvedTypes(Type *t) {
   assert(level == 0);
+  //std::cout << "Proj::assign" << t->dump(0) << std::endl;
+
+  type = (new TypeFunction())
+    ->setReturnType(Type::any);
+
+  for(size_t i = 0; i < pos; ++i) {
+    type->addArgument(Type::none, 1);
+  }
 
   auto tf = dynamic_cast<TypeFunction *>(t);
   if(tf) {
-    Type *argt = Type::none;
-    bool posResolved = false;
+    if(tf->getArgumentCount() > pos) {
+      auto rett = Type::min(tf->getArgumentType(pos), tf->getReturnType());
 
-    if(tf->getArgumentCount() <= pos) {
-      argt = tf->getArgumentType(0);
-    } else {
-      argt = tf->getArgumentType(pos);
-      posResolved = true;
-    }
+      type = (new TypeFunction())
+        ->setReturnType(rett);
 
-    while(auto loop = dynamic_cast<TypeLoopable *>(argt)) {
-      argt = loop->getReturnType();
-    }
-        
-    if(auto argtt = dynamic_cast<TypeTuple *>(argt)) {
-      type = new TypeFunction();
-
-      for(size_t i = 0; i < argtt->getTupleWidth(); ++i) {
-        type->addArgument(argtt->getElementType(i), 1);
-      }
-
-      type->setReturnType(argtt->getElementType(pos));
-    } else {
-      TypeTuple *attempt = new TypeTuple();
-      for(size_t i = 0; i < pos; ++i) {
-        attempt->addElementType(Type::none);
-      }
-
-      if(argt->canConvertTo(attempt)) {
-        type = (new TypeFunction())
-          ->setReturnType(Type::any);
-
-        for(size_t i = 0; i < pos; ++i) {
-          type->addArgument(Type::any, 1);
+      for(size_t i = 0; i < tf->getArgumentCount(); ++i) {
+        if(i == pos) {
+          type->addArgument(rett, 1);
+        } else {
+          type->addArgument(tf->getArgumentType(i), 1);
         }
-      } else {
-        assert(posResolved);
-
-        type = (new TypeFunction())
-          ->addArgument(argt, 1)
-          ->setReturnType(argt);
       }
     }
-  } else {
-    type = (new TypeFunction())
-      ->setReturnType(t);
-
-    for(size_t i = 0; i < pos - 1; ++i) {
-      type->addArgument(Type::any, 1);
-    }
-
-    type->addArgument(t, 1);
   }
+
+  return type->canConvertTo(t);
 }
 
 void *projection0_0(void *v) { return v; }
@@ -1220,72 +1334,105 @@ Type *NodeExprProjection::getType() {
   return type;
 }
 
+std::string NodeExprProjection::dump(int i) {
+  std::ostringstream str;
+  str << indent(i) << "Projection: (" << pos << ", " << level << ")";
+  return str.str();
+}
+
 void NodeExprLoop::rewriteDeclarations(SymbolTable *st, NodeExpr **) {
-  auto contType = dynamic_cast<TypeLoopable *>(container->getType());
-  assert(contType);
+  if(argId) return;
 
-  if(!contId) {
-    targetName = createUniqueIdentifier();
+  argument->rewriteDeclarations(st, &argument);
+  argument->resolveSymbols(st);
+  argument->assignUnresolvedTypes(Type::any);
+  argument->rewriteFunctionApplications(&argument);
 
-    st->addVar(contName, contType);
-    st->addVar(keyName, contType->getReturnType());
-    st->addVar(targetName, contType->generate(expr->getType()));
+  targetName = createUniqueIdentifier();
 
-    contId = new NodeIdentifier(contName);
-    keyId = new NodeIdentifier(keyName);
-    targetId = new NodeIdentifier(targetName);
-  }
+  st->addVar(argName, argument->getType());
+
+  domain->rewriteDeclarations(st, &domain);
+  domain->resolveSymbols(st);
+  domain->assignUnresolvedTypes(Type::any);
+  domain->rewriteFunctionApplications(&domain);
+
+  auto domType = dynamic_cast<TypeLoopable *>(domain->getType());
+  assert(domType);
+
+  st->addVar(keyName, domType->getArgumentType(0));
+
+  expr->rewriteDeclarations(st, &expr);
+  expr->resolveSymbols(st);
+  expr->assignUnresolvedTypes(Type::any);
+  expr->rewriteFunctionApplications(&expr);
+
+  st->addVar(targetName, domType->generate(expr->getType()));
+
+  argId = new NodeIdentifier(argName);
+  keyId = new NodeIdentifier(keyName);
+  targetId = new NodeIdentifier(targetName);
 }
 
 void NodeExprLoop::resolveSymbols(SymbolTable *st) {
-  contId->resolveSymbols(st);
+  argId->resolveSymbols(st);
   keyId->resolveSymbols(st);
   targetId->resolveSymbols(st);
 
-  container->resolveSymbols(st);
+  argument->resolveSymbols(st);
+  domain->resolveSymbols(st);
   expr->resolveSymbols(st);
 }
 
 void NodeExprLoop::rewriteFunctionApplications(NodeExpr **) {
-  container->rewriteFunctionApplications(&container);
+  argument->rewriteFunctionApplications(&argument);
+  domain->rewriteFunctionApplications(&domain);
   expr->rewriteFunctionApplications(&expr);
 }
 
-void NodeExprLoop::assignUnresolvedTypes(Type *t) {
+bool NodeExprLoop::assignUnresolvedTypes(Type *t) {
   if(auto lt = dynamic_cast<TypeLoopable *>(t)) {
-    container->assignUnresolvedTypes(Type::any);
+    argument->assignUnresolvedTypes(Type::any);
+    domain->assignUnresolvedTypes(Type::any);
     expr->assignUnresolvedTypes(lt->getReturnType());
   } else {
-    container->assignUnresolvedTypes(Type::any);
+    argument->assignUnresolvedTypes(Type::any);
+    domain->assignUnresolvedTypes(Type::any);
     expr->assignUnresolvedTypes(Type::any);
   }
+
+  auto dt = dynamic_cast<TypeLoopable *>(domain->getType());
+  return dt && dt->generate(expr->getType())->canConvertTo(t);
 }
 
 void NodeExprLoop::compile(Assembly &assembly) {
-  TypeLoopable *ct = dynamic_cast<TypeLoopable *>(container->getType());
-  assert(ct);
+  TypeLoopable *dt = dynamic_cast<TypeLoopable *>(domain->getType());
+  assert(dt);
   Type *result = expr->getType();
 
   // TODO
-  assert(container->getType()->getSize() == 8);
+  assert(argument->getType()->getSize() == 8);
+  assert(dt->getSize() == 8);
 
   assembly.add(push(rbx()));
   assembly.add(push(rcx()));
   assembly.add(push(rdx()));
 
-  contId->compileL(assembly);
+  argId->compileL(assembly);
   assembly.add(move(rax(), rbx()));
-  container->compile(assembly);
+  argument->compile(assembly);
   assembly.add(move(rax(), memory(rbx())));
 
   targetId->compileL(assembly);
   assembly.add(move(rax(), rdx()));
-  container->compile(assembly);
-  ct->loopGenerate(assembly, result);
+  domain->compile(assembly);
+  dt->loopGenerate(assembly, result);
   assembly.add(move(rax(), memory(rdx())));
 
-  assembly.add(move(memory(rbx()), rax()));
-  void *data = ct->loopBegin(assembly, result);
+  domain->compile(assembly);
+  assembly.add(move(rax(), rbx()));
+
+  void *data = dt->loopBegin(assembly, result);
   keyId->compileL(assembly);
   assembly.add(move(rcx(), memory(rax())));
 
@@ -1294,74 +1441,21 @@ void NodeExprLoop::compile(Assembly &assembly) {
   keyId->compile(assembly);
   assembly.add(move(rax(), rcx()));
   expr->compile(assembly);
-  ct->loopSaveResult(assembly, result);
+  dt->loopSaveResult(assembly, result);
 
   assembly.add(move(memory(rbx()), rax()));
-  ct->loopStep(assembly, result);
+  dt->loopStep(assembly, result);
 
   assembly.add(move(memory(rbx()), rax()));
-  ct->loopEnd(assembly, result, data);
+
+  domain->compile(assembly);
+  dt->loopEnd(assembly, result, data);
 
   assembly.add(pop(rdx()));
   assembly.add(pop(rcx()));
   assembly.add(pop(rbx()));
 
   targetId->compile(assembly);
-
-//  } else {
-//    TypeTuple *tt = dynamic_cast<TypeTuple *>(container->getType());
-//    assert(tt);
-//    TypeLoopable *ct = dynamic_cast<TypeLoopable *>(tt->getElementType(tupleIndex));
-//    assert(ct);
-//    Type *result = expr->getType();
-//
-//    TypeTuple *nt = new TypeTuple();
-//    for(int i = 0; i < tt->getTupleWidth(); ++i) {
-//      if(i == tupleIndex) {
-//        nt->addElementType(ct->getReturnType());
-//      } else {
-//        nt->addElementType(tt->getElementType(i));
-//      }
-//    }
-//
-//    container->compile(assembly);
-//    assembly.add(push(rsi()));
-//    assembly.add(move(rax(), rsi()));
-//    assembly.add(move(memory(tt->getElementOffset(tupleIndex), rsi()), rax()));
-//    void *data = ct->loopBegin(assembly, result);
-//    ct->loopStep(assembly, result, data);
-//
-//    alloc(assembly, nt->getHeapSize());
-//
-//    for(int i = 0; i < tt->getTupleWidth(); ++i) {
-//      if(i == tupleIndex) {
-//        switch(tt->getElementType(i)->getSize()) {
-//          case 8:
-//            assembly.add(move(rcx(), memory(nt->getElementOffset(i), rax())));
-//            break;
-//          default:
-//            assert(false);
-//        }
-//      } else {
-//        switch(tt->getElementType(i)->getSize()) {
-//          case 8:
-//            assembly.add(push(rdx()));
-//            assembly.add(move(memory(tt->getElementOffset(i), rsi()), rdx()));
-//            assembly.add(move(rdx(), memory(nt->getElementOffset(i), rax())));
-//            assembly.add(pop(rdx()));
-//            break;
-//          default:
-//            assert(false);
-//        }
-//      }
-//    }
-//    
-//    assembly.add(move(rax(), rcx()));
-//    expr->compile(assembly);
-//    ct->loopEnd(assembly, result, data);
-//
-//    assembly.add(pop(rsi()));
-//  }
 }
 
 void NodeExprLoop::compileL(Assembly &) {
@@ -1370,7 +1464,7 @@ void NodeExprLoop::compileL(Assembly &) {
 
 Type *NodeExprLoop::getType() {
   if(!type) {
-    TypeLoopable *tl = dynamic_cast<TypeLoopable *>(container->getType());
+    TypeLoopable *tl = dynamic_cast<TypeLoopable *>(domain->getType());
     assert(tl);
 
     type = tl->generate(expr->getType());
@@ -1382,8 +1476,9 @@ Type *NodeExprLoop::getType() {
 std::string NodeExprLoop::dump(int i) {
   std::ostringstream str;
   str << indent(i) <<
-    "NodeExprLoop (container: " << contName << ", key: " << keyName << ", target: " << targetName << ")\n"
-    << container->dump(i + 2) << "\n"
+    "NodeExprLoop (argument: " << argName << ", key: " << keyName << ", target: " << targetName << ")\n"
+    << argument->dump(i + 2) << "\n"
+    << domain->dump(i + 2) << "\n"
     << expr->dump(i + 2);
   return str.str();
 }
@@ -1410,6 +1505,10 @@ void NodeExprBinarySimple::rewriteDeclarations(SymbolTable *syms, NodeExpr **par
 
 NodeExpr *NodeExprBinarySimple::implementation() {
   assert(false); // TODO: subclass should have done this
+}
+
+bool NodeExprBinarySimple::NodeExprConstantFunction::assignUnresolvedTypes(Type *t) {
+  return type->canConvertTo(t);
 }
 
 static int32_t addition_int32_t(int32_t a, int32_t b) {
@@ -1443,8 +1542,8 @@ void NodeExprDeclaration::rewriteFunctionApplications(NodeExpr **) {
   // no functions in here
 }
 
-void NodeExprDeclaration::assignUnresolvedTypes(Type *) {
-  // there is no unclearness of types in here
+bool NodeExprDeclaration::assignUnresolvedTypes(Type *t) {
+  return getType()->canConvertTo(t);
 }
 
 void NodeExprDeclaration::compile(Assembly &) {
@@ -1474,7 +1573,7 @@ void NodeExprAssign::rewriteDeclarations(SymbolTable *st, NodeExpr **) {
 }
 
 // TYPE TODO
-void NodeExprAssign::assignUnresolvedTypes(Type *t) {
+bool NodeExprAssign::assignUnresolvedTypes(Type *t) {
   // TODO: fix if one side is function
   lhs->assignUnresolvedTypes(t);
   type = lhs->getType();
@@ -1486,6 +1585,8 @@ void NodeExprAssign::assignUnresolvedTypes(Type *t) {
   }
 
   assert(type);
+
+  return type->canConvertTo(t);
 }
 
 void NodeExprAssign::rewriteFunctionApplications(NodeExpr **parent) {
@@ -1601,11 +1702,11 @@ void NodeTypedLambda::rewriteFunctionApplications(NodeExpr **) {
   body->rewriteFunctionApplications();
 }
 
-void NodeTypedLambda::assignUnresolvedTypes(Type *) {
+bool NodeTypedLambda::assignUnresolvedTypes(Type *) {
   type = dynamic_cast<TypeFunction *>(getType());
   assert(type);
 
-  body->assignUnresolvedTypes(type->getReturnType());
+  return body->assignUnresolvedTypes(type->getReturnType());
 }
 
 void NodeTypedLambda::compile(Assembly &assembly) {

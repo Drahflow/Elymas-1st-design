@@ -38,7 +38,7 @@ class NodeStatement: public TreeNode {
     virtual void rewriteDeclarations(SymbolTable *) = 0;
     virtual void resolveSymbols(SymbolTable *) = 0;
     virtual void rewriteFunctionApplications() = 0;
-    virtual void assignUnresolvedTypes(Type *) = 0;
+    virtual bool assignUnresolvedTypes(Type *) = 0;
     virtual void compile(Assembly &) = 0;
 };
 
@@ -49,7 +49,7 @@ class NodeExpr: public TreeNode {
     virtual void rewriteDeclarations(SymbolTable *, NodeExpr **parent) = 0;
     virtual void resolveSymbols(SymbolTable *) = 0;
     virtual void rewriteFunctionApplications(NodeExpr **parent) = 0;
-    virtual void assignUnresolvedTypes(Type *) = 0;
+    virtual bool assignUnresolvedTypes(Type *) = 0;
     virtual void compile(Assembly &) = 0;
     virtual void compileL(Assembly &) = 0;
     virtual Type *getType() = 0;
@@ -62,7 +62,7 @@ class NodeIdentifier: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **) { }
-    void assignUnresolvedTypes(Type *) { }
+    bool assignUnresolvedTypes(Type *t);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
@@ -89,7 +89,7 @@ class NodeString: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **) { }
-    void assignUnresolvedTypes(Type *) { }
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
@@ -104,7 +104,7 @@ class NodeInteger: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **) { }
-    void assignUnresolvedTypes(Type *) { }
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
@@ -153,7 +153,7 @@ class NodeExprTuple: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
@@ -178,7 +178,7 @@ class NodeExprArray: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
@@ -190,19 +190,15 @@ class NodeExprArray: public NodeExpr {
 
 class NodeExprApply: public NodeExpr {
   public:
-    NodeExprApply(NodeExpr *function, NodeExpr *argument)
-      : function(function), argument(argument), syms(0) {
-      assert(function);
-      assert(argument);
-    }
+    NodeExprApply(NodeExpr *function, NodeExpr *argument);
 
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
-    Type *getType();
+    Type *getType() { return type; }
     std::string dump(int);
 
   private:
@@ -210,6 +206,7 @@ class NodeExprApply: public NodeExpr {
     NodeExpr *argument;
 
     SymbolTable *syms;
+    Type *type;
 
     void abstractTypeDomainedFull(NodeExpr **, TypeDomained *);
     void abstractTypeDomainedPositioned(NodeExpr **, const std::vector<int> &);
@@ -222,7 +219,7 @@ class NodeStatementExpr: public NodeStatement {
     void rewriteDeclarations(SymbolTable *);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications();
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     std::string dump(int);
 
@@ -241,7 +238,7 @@ class NodeStatementWhile: public NodeStatement {
     void rewriteDeclarations(SymbolTable *);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications();
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
 
   private:
@@ -260,7 +257,7 @@ class NodeStatementGoto: public NodeStatement {
     void rewriteDeclarations(SymbolTable *) { }
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications();
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
 
   private:
@@ -278,7 +275,7 @@ class NodeStatementLabel: public NodeStatement {
     void rewriteDeclarations(SymbolTable *) { }
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications();
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
 
   private:
@@ -294,7 +291,7 @@ class NodeStatementRule: public NodeStatement {
     void rewriteDeclarations(SymbolTable *);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications();
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
 
@@ -342,7 +339,7 @@ class NodeStatementBlock: public NodeStatement {
     void rewriteDeclarations(SymbolTable *);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications();
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
 
   private:
@@ -356,14 +353,16 @@ class NodeExprFunction: public NodeExpr {
 
 class NodeExprProjection: public NodeExprFunction {
   public:
-    NodeExprProjection(int pos, int level): pos(pos), level(level), type(type) { }
+    NodeExprProjection(int pos, int level): pos(pos), level(level), type(0) { }
+    NodeExprProjection(int pos, int level, TypeFunction *type): pos(pos), level(level), type(type) { }
     void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
+    std::string dump(int);
 
   private:
     size_t pos;
@@ -381,7 +380,7 @@ class NodeExprUnary: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
@@ -402,7 +401,7 @@ class NodeExprBinary: public NodeExpr {
 
     void resolveSymbols(SymbolTable *) { assert(false); }
     void rewriteFunctionApplications(NodeExpr **) { assert(false); }
-    void assignUnresolvedTypes(Type *) { assert(false); }
+    bool assignUnresolvedTypes(Type *) { assert(false); }
     void compile(Assembly &) { assert(false); }
     void compileL(Assembly &) { assert(false); }
     Type *getType() { assert(false); }
@@ -423,7 +422,7 @@ class NodeExprAssign: public NodeExprBinary {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
 
@@ -448,7 +447,7 @@ class NodeExprBinarySimple: public NodeExprBinary {
         void rewriteDeclarations(SymbolTable *, NodeExpr **) { }
         void resolveSymbols(SymbolTable *) { }
         void rewriteFunctionApplications(NodeExpr **) { }
-        void assignUnresolvedTypes(Type *) { }
+        bool assignUnresolvedTypes(Type *);
         void compileL(Assembly &) { compileError("no writing to predefined functions"); }
         Type *getType() { return type; }
         std::string dump(int i) { return indent(i) + "constant function"; }
@@ -572,24 +571,26 @@ class NodeExprMod: public NodeExprBinarySimple {
 
 class NodeExprLoop: public NodeExpr {
   public:
-    NodeExprLoop(NodeExpr *container, const std::string &contName, const std::string &keyName, NodeExpr *expr)
-      : container(container), contName(contName), keyName(keyName), contId(0), keyId(0), targetId(0), expr(expr), type(0) { }
+    NodeExprLoop(NodeExpr *argument, const std::string &argName, NodeExpr *domain, const std::string &keyName, NodeExpr *expr)
+      : argument(argument), domain(domain), argName(argName), keyName(keyName),
+        argId(0), keyId(0), targetId(0), expr(expr), type(0) { }
 
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();
     std::string dump(int i);
 
   private:
-    NodeExpr *container;
-    std::string contName;
+    NodeExpr *argument;
+    NodeExpr *domain;
+    std::string argName;
     std::string keyName;
     std::string targetName;
-    NodeIdentifier *contId;
+    NodeIdentifier *argId;
     NodeIdentifier *keyId;
     NodeIdentifier *targetId;
     NodeExpr *expr;
@@ -604,7 +605,7 @@ class NodeExprDeclaration: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType() { return type; }
@@ -627,7 +628,7 @@ class NodeTypeFunction: public NodeExpr {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *) { assert(false); }
     void rewriteFunctionApplications(NodeExpr **) { assert(false); }
-    void assignUnresolvedTypes(Type *) { assert(false); }
+    bool assignUnresolvedTypes(Type *) { assert(false); }
     void compile(Assembly &) { assert(false); }
     void compileL(Assembly &) { assert(false); }
     Type *getType() { assert(false); }
@@ -645,7 +646,7 @@ class NodeTypedLambda: public NodeExprFunction {
     void rewriteDeclarations(SymbolTable *, NodeExpr **);
     void resolveSymbols(SymbolTable *);
     void rewriteFunctionApplications(NodeExpr **);
-    void assignUnresolvedTypes(Type *);
+    bool assignUnresolvedTypes(Type *);
     void compile(Assembly &);
     void compileL(Assembly &);
     Type *getType();

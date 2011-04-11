@@ -26,7 +26,7 @@ Type *Type::any = new (class _any: public Type {
 Type *Type::none = new (class _none: public Type {
   public:
     unsigned int getSize() { typeResolutionIncomplete(); }
-    bool canConvertTo(Type *) { return false; }
+    bool canConvertTo(Type *t) { return t == Type::none; }
     void convertTo(Type *, Assembly &) { typeResolutionIncomplete(); }
     void compile(Assembly &) { typeResolutionIncomplete(); }
 
@@ -40,7 +40,7 @@ Type *Type::boolean = new (class _boolean: public Type {
   public:
     bool canConvertTo(Type *t) {
       // TODO: allow meaningful conversions
-      return t == this;
+      return t == Type::none || t == this;
     }
 
     void convertTo(Type *t, Assembly &) {
@@ -60,7 +60,7 @@ Type *Type::sint32 = new (class _sint32: public Type {
   public:
     bool canConvertTo(Type *t) {
       // TODO: allow meaningful conversions
-      return t == this;
+      return t == Type::none || t == this;
     }
 
     void convertTo(Type *t, Assembly &) {
@@ -80,7 +80,7 @@ Type *Type::uint64 = new (class _uint64: public Type {
   public:
     bool canConvertTo(Type *t) {
       // TODO: allow meaningful conversions
-      return t == this;
+      return t == Type::none || t == this;
     }
 
     void convertTo(Type *t, Assembly &) {
@@ -95,9 +95,16 @@ Type *Type::uint64 = new (class _uint64: public Type {
     }
 });
 
-bool TypeFunction::canConvertTo(Type *super) {
+bool TypeFunction::canConvertTo(Type *t) {
   // TODO: allow meaningful conversions
-  return *this == *super;
+  return t == Type::none || *this == *t;
+}
+
+Type *Type::min(Type *a, Type *b) {
+  if(a->canConvertTo(b)) return b;
+  if(b->canConvertTo(a)) return a;
+
+  return Type::none;
 }
 
 bool TypeFunction::operator == (Type &other) {
@@ -188,9 +195,9 @@ unsigned int TypeTuple::getElementOffset(unsigned int i) {
   return ret;
 }
 
-bool TypeTuple::canConvertTo(Type *other) {
+bool TypeTuple::canConvertTo(Type *t) {
   // TODO: conversion would be possible, if all elements can be converted
-  return *this == *other;
+  return t == Type::none || *this == *t;
 }
 
 void TypeTuple::compile(Assembly &) {
