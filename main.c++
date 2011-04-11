@@ -26,13 +26,17 @@ void Main::parse(const std::string &file) {
       _(size_t offset, std::ifstream &input): offset(offset), input(input) { }
       char head() { input.seekg(offset); return input.get(); }
       _ *tail() { return new _(offset + 1, input); }
-      bool isEmpty() { input.seekg(offset); return !input.good(); }
+      bool isEmpty() { input.seekg(offset); return !input.good() || input.peek() == EOF; }
   }) (0, input);
 
   parser = std::shared_ptr<Parser<char, TreeNode *> >(grammar.generateParser());
   auto whitespace = grammar.getWhitespace();
 
   while(!inStream->isEmpty()) {
+    auto next = whitespace->parse(inStream);
+    inStream = next->head().second;
+    if(inStream->isEmpty()) break;
+
     auto statements = parser->parse(inStream);
 
     if(statements->isEmpty()) {
@@ -52,10 +56,6 @@ void Main::parse(const std::string &file) {
     }
 
     inStream = statements->head().second;
-
-    auto next = whitespace->parse(inStream);
-
-    inStream = next->head().second;
   }
 
   if(debug) {
