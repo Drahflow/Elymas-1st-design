@@ -19,9 +19,11 @@ run() {
 nl="
 "
 
-run examples/empty.ey "HALLO WELT!"
+run examples/empty.ey ""
+run examples/empty2.ey ""
 run examples/1.ey ""
-run examples/arithmetik.ey "ABC"
+run examples/arithmetik.ey ""
+run examples/arithmetik2.ey "ABC${nl}ABC"
 run examples/variables.ey ""
 run examples/putchar.ey "HALLO WELT!"
 run examples/hallowelt.ey "HALLO WELT!"
