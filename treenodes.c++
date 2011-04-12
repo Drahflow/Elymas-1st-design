@@ -824,6 +824,7 @@ void NodeExprApply::abstractTypeDomainedPositioned(NodeExpr **parent, const std:
 
     for(size_t i = 0; i < ft->getArgumentCount(); ++i) {
       if(std::find(positions.begin(), positions.end(), i) == positions.end()) {
+        assert(i < argNames.size());
         replacementCall->add(new NodeIdentifier(argNames[i]));
       } else {
         NodeExpr *fun = argument;
