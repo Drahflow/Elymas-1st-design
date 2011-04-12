@@ -124,9 +124,16 @@ bool TypeFunction::operator == (Type &other) {
   return true;
 }
 
-Type *TypeFunction::generate(Type *) {
-  // TODO generate clone with fixed return type
-  assert(false);
+Type *TypeFunction::generate(Type *t) {
+  TypeFunction *ret = new TypeFunction();
+
+  for(size_t i = 0; i < argumentTypes.size(); ++i) {
+    ret->addArgument(argumentTypes[i], argumentRanks[i]);
+  }
+
+  ret->setReturnType(t);
+
+  return ret;
 }
 
 std::string TypeFunction::dump(int i) {
