@@ -202,9 +202,22 @@ unsigned int TypeTuple::getElementOffset(unsigned int i) {
   return ret;
 }
 
+// TODO: conversion would be possible, if all elements can be converted
 bool TypeTuple::canConvertTo(Type *t) {
-  // TODO: conversion would be possible, if all elements can be converted
-  return t == Type::none || *this == *t;
+  if(t == Type::none) return true;
+  if(*this == *t) return true;
+  
+  if(auto tt = dynamic_cast<TypeTuple *>(t)) {
+    if(tt->getTupleWidth() > getTupleWidth()) return false;
+
+    for(size_t i = 0; i < tt->getTupleWidth(); ++i) {
+      if(!getElementType(i)->canConvertTo(tt->getElementType(i))) return false;
+    }
+
+    return true;
+  }
+
+  return getElementType(0)->canConvertTo(t);
 }
 
 void TypeTuple::compile(Assembly &) {
