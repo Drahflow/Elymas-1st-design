@@ -5,6 +5,7 @@
 
 #include <stdexcept>
 #include <cassert>
+#include <iostream>
 
 int32_t SymbolLocalVariable::INVALID = std::numeric_limits<int32_t>::min();
 int32_t SymbolClosureVariable::INVALID = std::numeric_limits<int32_t>::min();

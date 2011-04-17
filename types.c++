@@ -12,6 +12,7 @@ using namespace opcode;
 
 Type *Type::any = new (class _any: public Type {
   public:
+    bool isConcrete() { return false; }
     unsigned int getSize() { typeResolutionIncomplete(); }
     bool canConvertTo(Type *) { return true; }
     void convertTo(Type *, Assembly &) { typeResolutionIncomplete(); }
@@ -25,6 +26,7 @@ Type *Type::any = new (class _any: public Type {
 
 Type *Type::none = new (class _none: public Type {
   public:
+    bool isConcrete() { return false; }
     unsigned int getSize() { typeResolutionIncomplete(); }
     bool canConvertTo(Type *t) { return t == Type::none; }
     void convertTo(Type *, Assembly &) { typeResolutionIncomplete(); }
@@ -38,6 +40,7 @@ Type *Type::none = new (class _none: public Type {
 
 Type *Type::boolean = new (class _boolean: public Type {
   public:
+    bool isConcrete() { return true; }
     bool canConvertTo(Type *t) {
       // TODO: allow meaningful conversions
       return t == Type::none || t == this;
@@ -58,6 +61,7 @@ Type *Type::boolean = new (class _boolean: public Type {
 
 Type *Type::sint32 = new (class _sint32: public Type {
   public:
+    bool isConcrete() { return true; }
     bool canConvertTo(Type *t) {
       // TODO: allow meaningful conversions
       return t == Type::none || t == this;
@@ -78,6 +82,7 @@ Type *Type::sint32 = new (class _sint32: public Type {
 
 Type *Type::uint64 = new (class _uint64: public Type {
   public:
+    bool isConcrete() { return true; }
     bool canConvertTo(Type *t) {
       // TODO: allow meaningful conversions
       return t == Type::none || t == this;
@@ -134,6 +139,16 @@ Type *TypeFunction::generate(Type *t) {
   ret->setReturnType(t);
 
   return ret;
+}
+
+bool TypeFunction::isConcrete() {
+  if(!returnType->isConcrete()) return false;
+  
+  for(auto i = argumentTypes.begin(); i != argumentTypes.end(); ++i) {
+    if(!(*i)->isConcrete()) return false;
+  }
+
+  return true;
 }
 
 std::string TypeFunction::dump(int i) {
@@ -223,6 +238,14 @@ bool TypeTuple::canConvertTo(Type *t) {
 void TypeTuple::compile(Assembly &) {
   // TODO: initialize tuples
   assert(false);
+}
+
+bool TypeTuple::isConcrete() {
+  for(auto i = elementTypes.begin(); i != elementTypes.end(); ++i) {
+    if(!(*i)->isConcrete()) return false;
+  }
+
+  return true;
 }
 
 bool TypeDomained::canTakeDomainFrom(TypeDomained *other) {

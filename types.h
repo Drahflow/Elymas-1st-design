@@ -27,6 +27,8 @@ class Type: public NodeExpr {
       return !(*this == other);
     }
 
+    virtual bool isConcrete() = 0;
+
     static Type *any;
     static Type *none;
     static Type *sint32;
@@ -65,6 +67,8 @@ class TypeTuple: public Type {
     std::string dump(int index);
 
     void compile(Assembly &);
+
+    bool isConcrete();
 
   private:
     std::vector<Type *> elementTypes;
@@ -154,6 +158,8 @@ class TypeFunction: public TypeDomained {
     std::string dump(int index);
 
     Type *generate(Type *ret);
+
+    bool isConcrete();
 
   private:
     std::vector<Type *> argumentTypes;

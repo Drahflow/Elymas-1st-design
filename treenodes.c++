@@ -620,6 +620,10 @@ class TypeArray: public TypeLoopable {
         default: assert(false);
       }
     }
+
+    bool isConcrete() {
+      return innerType->isConcrete();
+    }
 };
 
 void NodeExprArray::rewriteDeclarations(SymbolTable *st, NodeExpr **parent) {
@@ -771,6 +775,7 @@ void NodeExprApply::abstractTypeDomainedFull(NodeExpr **parent, TypeDomained *td
     for(size_t i = 0; i < tdf->getArgumentCount(); ++i) {
       auto id = createUniqueIdentifier();
 
+      assert(tdf->getArgumentType(i)->isConcrete());
       replacementArguments->add(new NodeExprDeclaration(tdf->getArgumentType(i), new NodeIdentifier(id)));
       replacementCall->add(new NodeIdentifier(id));
     }
@@ -819,6 +824,7 @@ void NodeExprApply::abstractTypeDomainedPositioned(NodeExpr **parent, const std:
       auto id = createUniqueIdentifier();
       argNames.push_back(id);
 
+      assert(prf->getArgumentType(i)->isConcrete());
       replacementArguments->add(new NodeExprDeclaration(prf->getArgumentType(i), new NodeIdentifier(id)));
     }
 
@@ -949,6 +955,7 @@ static bool needsAbstraction(Type *wanted, Type *given, int rank) {
 //    3d. all arguments looped have their topmost type removed accordingly
 // 4. (repeatedly) invoke the function until all elements have
 //    been processed
+// TODO: combine the code with the assignUnresolvedTypes code below
 void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
   function->rewriteFunctionApplications(&function);
   argument->rewriteFunctionApplications(&argument);
@@ -1003,9 +1010,15 @@ void NodeExprApply::rewriteFunctionApplications(NodeExpr **parent) {
 
     if(!needsAbstraction(fargt, argt, rank)) continue;
 
-    // TODO: think about what we want to happen in the case of functions which extend other function's domains
     if(!abstractionPrimary) {
       abstractionPositions.push_back(i);
+      abstractionPrimary = dynamic_cast<TypeDomained *>(argt);
+      assert(abstractionPrimary);
+    } else if(dynamic_cast<TypeDomained *>(argt) && abstractionPrimary->canTakeDomainFrom(dynamic_cast<TypeDomained *>(argt))) {
+      int tmp = abstractionPositions.front();
+      abstractionPositions.push_back(tmp);
+      abstractionPositions.front() = i;
+
       abstractionPrimary = dynamic_cast<TypeDomained *>(argt);
       assert(abstractionPrimary);
     } else if(dynamic_cast<TypeDomained *>(argt) && dynamic_cast<TypeDomained *>(argt)->canTakeDomainFrom(abstractionPrimary)) {
@@ -1055,8 +1068,8 @@ bool NodeExprApply::assignUnresolvedTypes(Type *t) {
     } else {
       TypeTuple *newAt = new TypeTuple();
 
-      for(size_t i = 0; i < ft->getArgumentCount(); ++i) {
-        newAt->addElementType(ft->getArgumentType(i));
+      for(size_t i = 0; i < newFt->getArgumentCount(); ++i) {
+        newAt->addElementType(newFt->getArgumentType(i));
       }
 
       argument->assignUnresolvedTypes(newAt);
@@ -1128,9 +1141,15 @@ bool NodeExprApply::assignUnresolvedTypes(Type *t) {
 
       if(!needsAbstraction(fargt, argt, rank)) continue;
 
-      // TODO: think about what we want to happen in the case of functions which extend other function's domains
       if(!abstractionPrimary) {
         abstractionPositions.push_back(i);
+        abstractionPrimary = dynamic_cast<TypeDomained *>(argt);
+        assert(abstractionPrimary);
+      } else if(dynamic_cast<TypeDomained *>(argt) && abstractionPrimary->canTakeDomainFrom(dynamic_cast<TypeDomained *>(argt))) {
+        int tmp = abstractionPositions.front();
+        abstractionPositions.push_back(tmp);
+        abstractionPositions.front() = i;
+
         abstractionPrimary = dynamic_cast<TypeDomained *>(argt);
         assert(abstractionPrimary);
       } else if(dynamic_cast<TypeDomained *>(argt) && dynamic_cast<TypeDomained *>(argt)->canTakeDomainFrom(abstractionPrimary)) {
@@ -1157,6 +1176,8 @@ bool NodeExprApply::assignUnresolvedTypes(Type *t) {
 
   while(!unloopedDomains.empty()) {
     type = unloopedDomains.back()->generate(type);
+//    std::cout << "unlooping over: " << std::endl;
+//    std::cout << type->dump(0) << std::endl;
     unloopedDomains.pop_back();
   }
 
@@ -1275,7 +1296,7 @@ bool NodeExprProjection::assignUnresolvedTypes(Type *t) {
   type = (new TypeFunction())
     ->setReturnType(Type::any);
 
-  for(size_t i = 0; i < pos; ++i) {
+  for(size_t i = 0; i <= pos; ++i) {
     type->addArgument(Type::none, 1);
   }
 
