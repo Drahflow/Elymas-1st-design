@@ -101,8 +101,18 @@ Type *Type::uint64 = new (class _uint64: public Type {
 });
 
 bool TypeFunction::canConvertTo(Type *t) {
-  // TODO: allow meaningful conversions
-  return t == Type::none || *this == *t;
+  if(t == Type::none) return true;
+
+  auto ft = dynamic_cast<TypeFunction *>(t);
+  if(!ft) return false;
+
+  if(!returnType->canConvertTo(ft->getReturnType())) return false;
+  if(ft->getArgumentCount() < argumentTypes.size()) return false;
+  for(size_t i = 0; i < argumentTypes.size(); ++i) {
+    if(!ft->getArgumentType(i)->canConvertTo(argumentTypes[i])) return false;
+  }
+
+  return true;
 }
 
 Type *Type::min(Type *a, Type *b) {

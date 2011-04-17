@@ -479,24 +479,22 @@ void NodeExprTuple::compileL(Assembly &) {
 }
 
 Type *NodeExprTuple::getType() {
-  if(!type) {
-    if(elements.size() == 1) {
-      type = elements[0]->getType();
-    } else {
-      TypeTuple *typet = new TypeTuple();
-      for(auto i = elements.begin(); i != elements.end(); ++i) {
-        Type *et = (*i)->getType();
-        if(auto ett = dynamic_cast<TypeTuple *>(et)) {
-          for(size_t j = 0; j < ett->getTupleWidth(); ++j) {
-            typet->addElementType(ett->getElementType(j));
-          }
-        } else {
-          typet->addElementType(et);
+  if(elements.size() == 1) {
+    type = elements[0]->getType();
+  } else {
+    TypeTuple *typet = new TypeTuple();
+    for(auto i = elements.begin(); i != elements.end(); ++i) {
+      Type *et = (*i)->getType();
+      if(auto ett = dynamic_cast<TypeTuple *>(et)) {
+        for(size_t j = 0; j < ett->getTupleWidth(); ++j) {
+          typet->addElementType(ett->getElementType(j));
         }
+      } else {
+        typet->addElementType(et);
       }
-
-      type = typet;
     }
+
+    type = typet;
   }
 
   return type;
@@ -1125,6 +1123,9 @@ bool NodeExprApply::assignUnresolvedTypes(Type *t) {
       argts.push_back(argt);
   }
 
+  std::vector<std::vector<size_t>> abstractionEvents;
+  while(abstractionEvents.size() < ft->getArgumentCount()) abstractionEvents.push_back(std::vector<size_t>());
+
   bool any = true;
   while(any) {
     any = false;
@@ -1158,27 +1159,27 @@ bool NodeExprApply::assignUnresolvedTypes(Type *t) {
     }
 
     if(!abstractionPositions.empty()) {
-      unloopedDomains.push_back(abstractionPrimary);
-
       for(auto i = abstractionPositions.begin(); i != abstractionPositions.end(); ++i) {
         auto atd = dynamic_cast<TypeDomained *>(argts[*i]);
         assert(atd);
 
         argts[*i] = atd->getReturnType();
+        abstractionEvents[*i].push_back(unloopedDomains.size());
       }
 
+      unloopedDomains.push_back(abstractionPrimary);
       any = true;
     }
   }
 
   type = ft->getReturnType();
+
   //std::cout << "number of unlooped domains: " << unloopedDomains.size() << std::endl;
 
-  while(!unloopedDomains.empty()) {
-    type = unloopedDomains.back()->generate(type);
+  for(auto i = unloopedDomains.rbegin(); i != unloopedDomains.rend(); ++i) {
+    type = (*i)->generate(type);
 //    std::cout << "unlooping over: " << std::endl;
 //    std::cout << type->dump(0) << std::endl;
-    unloopedDomains.pop_back();
   }
 
   //std::cout << "determined type (function): " << std::endl;
@@ -1187,6 +1188,52 @@ bool NodeExprApply::assignUnresolvedTypes(Type *t) {
   //std::cout << argument->getType()->dump(0) << std::endl;
   //std::cout << "determined type (application): " << std::endl;
   //std::cout << type->dump(0) << std::endl;
+  //std::cout << "requested type (application): " << std::endl;
+  //std::cout << t->dump(0) << std::endl;
+
+  if(type->canConvertTo(t) && !type->isConcrete()) {
+    // determine requested domains, put them into a stack
+    std::vector<TypeDomained *> requestedDomains;
+    Type *reqt = t;
+    for(auto i = unloopedDomains.begin(); i != unloopedDomains.end(); ++i) {
+      auto reqtd = dynamic_cast<TypeDomained *>(reqt);
+      assert(reqtd);
+      requestedDomains.push_back(reqtd);
+      reqt = reqtd->getReturnType();
+    }
+
+    // reapply that stack to the function argument types
+    std::vector<Type *> argtypes;
+    for(size_t i = 0; i < ft->getArgumentCount(); ++i) {
+      argtypes.push_back(ft->getArgumentType(i));
+    }
+
+    for(int i = requestedDomains.size() - 1; i >= 0; --i) {
+      for(size_t j = 0; j < ft->getArgumentCount(); ++j) {
+        if(std::find(abstractionEvents[j].begin(), abstractionEvents[j].end(), i) != abstractionEvents[j].end()) {
+          argtypes[j] = requestedDomains[i]->generate(argtypes[j]);
+        }
+      }
+    }
+
+    // puzzle the result into a tuple type
+    if(ft->getArgumentCount() != 1) {
+      TypeTuple *reqarg = new TypeTuple();
+      for(auto i = argtypes.begin(); i != argtypes.end(); ++i) {
+        reqarg->addElementType(*i);
+      }
+
+      // std::cout << "determined requested argument type:" << std::endl;
+      // std::cout << reqarg->dump(0) << std::endl;
+
+      argument->assignUnresolvedTypes(reqarg);
+    } else {
+      argument->assignUnresolvedTypes(argtypes[0]);
+    }
+  }
+
+  // std::cout << "determined type (argument), after context push: " << std::endl;
+  // std::cout << argument->getType()->dump(0) << std::endl;
 
   return type->canConvertTo(t);
 }
@@ -1291,7 +1338,7 @@ void NodeExprProjection::rewriteFunctionApplications(NodeExpr **) {
 
 bool NodeExprProjection::assignUnresolvedTypes(Type *t) {
   assert(level == 0);
-  //std::cout << "Proj::assign" << t->dump(0) << std::endl;
+  // std::cout << "Proj::assign" << t->dump(0) << std::endl;
 
   type = (new TypeFunction())
     ->setReturnType(Type::any);

@@ -104,7 +104,7 @@ Symbol *SymbolTableClosure::resolve(const std::string &id) {
 }
 
 void SymbolTableClosure::setHeapOffsets() {
-  assert(!heapOffset);
+  heapOffset = 0;
 
   for(auto i = symbols.begin(); i != symbols.end(); ++i) {
     // this number is the offset of the data fields from after the
